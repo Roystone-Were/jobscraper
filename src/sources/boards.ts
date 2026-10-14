@@ -1,4 +1,5 @@
 import { htmlToText } from "../details";
+import { kesRange, salaryFromCsg } from "../salary";
 import { cleanText, formatNairobi, type Job, USER_AGENT } from "../types";
 
 async function get(url: string, label: string): Promise<string> {
@@ -27,6 +28,9 @@ interface FuzuJob {
   requirements?: string;
   campaign_start_date?: number;
   campaign_end_date?: number;
+  salary_min_cents?: number;
+  salary_max_cents?: number;
+  salary_currency?: string | null;
   slug: string;
 }
 
@@ -47,6 +51,10 @@ export function parseFuzu(html: string): Job[] {
       posted: j.campaign_start_date ? formatNairobi(new Date(j.campaign_start_date * 1000)) : undefined,
       deadline: j.campaign_end_date ? formatNairobi(new Date(j.campaign_end_date * 1000)).split(",")[0] : undefined,
       deadlineAt: j.campaign_end_date ? j.campaign_end_date * 1000 : undefined,
+      salary:
+        (j.salary_min_cents || j.salary_max_cents) && (j.salary_currency ?? "KES") === "KES"
+          ? `${kesRange((j.salary_min_cents ?? 0) / 100, (j.salary_max_cents ?? 0) / 100)}/month (advertised)`
+          : undefined,
       url: `https://www.fuzu.com/kenya/jobs/${j.slug}`,
     };
   });
@@ -116,6 +124,7 @@ export function parsePsc(html: string): Job[] {
       description: `${scale}; ${vacancies} post(s); ${years} years' experience required; ${category}. Apply via the PSC portal, advert ${advert}.`,
       deadline: closes,
       deadlineAt: closesAt,
+      salary: salaryFromCsg(scale),
       url: PSC,
     });
   }
@@ -187,6 +196,7 @@ export function parseNakuru(html: string): Job[] {
         .join("; "),
       deadline: closes,
       deadlineAt: Number.isNaN(at) ? undefined : at,
+      salary: salary ? `KES ${cleanText(salary[1]).replace(/\s*[-–]\s*/, "–")}/month (advertised)` : undefined,
       url: link[1],
     });
   }

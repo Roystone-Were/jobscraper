@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS seen_jobs (
   status      TEXT,               -- NULL | 'saved' | 'hidden'
   notified_at INTEGER,            -- unix ms when sent to Telegram
   score       INTEGER,            -- AI fit 1-10 against the CV (src/ai.ts)
-  score_reason TEXT
+  score_reason TEXT,
+  salary      TEXT                -- pay with its basis, e.g. "... (advertised)" (src/salary.ts)
 );
 
 CREATE INDEX IF NOT EXISTS idx_seen_jobs_source ON seen_jobs (source);

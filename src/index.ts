@@ -2,6 +2,7 @@ import { scoreJob } from "./ai";
 import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
 import { fetchDetails, hasDetailPage } from "./details";
+import { salaryFromCsg, verifiedAiSalary } from "./salary";
 import { buildDaily, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
 import { getSetting, loadSettings, setSetting } from "./settings";
 import { fetchBrighterMonday } from "./sources/brightermonday";
@@ -274,6 +275,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
         if (r.status === "fulfilled") {
           batch[i].score = r.value.score;
           batch[i].scoreReason = r.value.reason;
+          batch[i].salary ??= verifiedAiSalary(r.value.salary, `${batch[i].title} ${batch[i].description ?? ""}`);
         } else {
           errors.push(`ai: ${r.reason}`);
         }
@@ -293,11 +295,13 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
             j.details = d.text;
             j.deadline = d.deadline;
             j.deadlineAt = d.deadlineAt;
+            j.salary ??= d.salary;
           }
           if (!j.details) return;
           const s = await scoreJob(env.AI, j, true);
           j.score = s.score;
           j.scoreReason = s.reason;
+          j.salary ??= verifiedAiSalary(s.salary, `${j.title} ${j.details}`);
         }),
       );
       refined.forEach((r) => r.status === "rejected" && errors.push(`details: ${r.reason}`));
@@ -314,6 +318,9 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
     (j.score != null ? j.score >= settings.minScore : matches(j, include, []));
   const matched = open.filter(isMatch);
   const unmatched = [...skipped, ...open.filter((j) => !isMatch(j))];
+
+  // Government ads quoting a CSG grade get the official pay band.
+  for (const j of open) j.salary ??= salaryFromCsg(`${j.title} ${j.description ?? ""} ${j.details ?? ""}`);
 
   const toSend = matched.slice(0, MAX_NOTIFICATIONS_PER_RUN);
   const sent: Job[] = [];
@@ -399,11 +406,11 @@ async function sourcesWithHistory(db: D1Database): Promise<Set<string>> {
 async function markSeen(db: D1Database, jobs: Job[], now: number): Promise<void> {
   if (!jobs.length) return;
   const stmt = db.prepare(
-    "INSERT OR IGNORE INTO seen_jobs (id, source, title, company, url, first_seen, fingerprint, short_key, notified_at, score, score_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO seen_jobs (id, source, title, company, url, first_seen, fingerprint, short_key, notified_at, score, score_reason, salary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   await db.batch(
     jobs.map((j) =>
-      stmt.bind(j.id, j.source, j.title, j.company ?? null, j.url, now, j.fingerprint ?? null, j.shortKey ?? null, j.notifiedAt ?? null, j.score ?? null, j.scoreReason ?? null),
+      stmt.bind(j.id, j.source, j.title, j.company ?? null, j.url, now, j.fingerprint ?? null, j.shortKey ?? null, j.notifiedAt ?? null, j.score ?? null, j.scoreReason ?? null, j.salary ?? null),
     ),
   );
 }

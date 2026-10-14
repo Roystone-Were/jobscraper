@@ -31,6 +31,7 @@ export function formatJob(job: Job): string {
   if (job.company) lines.push(`🏢 ${escape(job.company)}`);
   if (job.location) lines.push(`📍 ${escape(job.location)}`);
   if (job.posted) lines.push(`🕒 ${escape(job.posted)}`);
+  if (job.salary) lines.push(`💰 ${escape(job.salary)}`);
   if (job.deadline) lines.push(`⏳ Closes ${escape(job.deadline)}`);
   if (job.description) lines.push("", escape(job.description.slice(0, 300)));
   lines.push("", `<a href="${escape(job.url)}">Open on ${label}</a>`);

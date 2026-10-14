@@ -135,6 +135,7 @@ interface Row {
   source: Job["source"];
   score: number;
   score_reason: string | null;
+  salary: string | null;
 }
 
 /** Morning round-up of the last 24 hours. */
@@ -147,13 +148,13 @@ export async function buildDaily(env: Env, minScore: number, now = Date.now()): 
       .bind(since)
       .first<{ jobs: number; scored: number; alerts: number }>(),
     env.DB.prepare(
-      "SELECT title, company, url, source, score, score_reason FROM seen_jobs WHERE notified_at >= ? ORDER BY score DESC, notified_at DESC LIMIT 10",
+      "SELECT title, company, url, source, score, score_reason, salary FROM seen_jobs WHERE notified_at >= ? ORDER BY score DESC, notified_at DESC LIMIT 10",
     )
       .bind(since)
       .all<Row>(),
     // Just under the bar: worth a glance even though no alert was sent.
     env.DB.prepare(
-      "SELECT title, company, url, source, score, score_reason FROM seen_jobs WHERE first_seen >= ? AND notified_at IS NULL AND score BETWEEN ? AND ? ORDER BY score DESC, first_seen DESC LIMIT 5",
+      "SELECT title, company, url, source, score, score_reason, salary FROM seen_jobs WHERE first_seen >= ? AND notified_at IS NULL AND score BETWEEN ? AND ? ORDER BY score DESC, first_seen DESC LIMIT 5",
     )
       .bind(since, Math.max(1, minScore - 2), minScore - 1)
       .all<Row>(),
@@ -162,7 +163,9 @@ export async function buildDaily(env: Env, minScore: number, now = Date.now()): 
 
   const line = (r: Row) =>
     `<b>${r.score}/10</b> · <a href="${escape(r.url)}">${escape(r.title)}</a>${r.company ? ` — ${escape(r.company)}` : ""}` +
-    ` <i>(${escape(SOURCE_LABELS[r.source] ?? r.source)})</i>`;
+    ` <i>(${escape(SOURCE_LABELS[r.source] ?? r.source)})</i>` +
+    (r.salary ? `
+      💰 ${escape(r.salary)}` : "");
 
   const h = JSON.parse(health ?? "{}") as Health;
   const down = (Object.entries(h) as [Job["source"], SourceHealth][])

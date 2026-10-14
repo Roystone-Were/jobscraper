@@ -10,6 +10,8 @@ export const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 export interface Score {
   score: number;
   reason: string;
+  /** Pay exactly as the ad states it, or "" — verified against the ad text by the caller. */
+  salary?: string;
 }
 
 const SYSTEM = `You screen job ads for one candidate and rate how worth applying each one is.
@@ -24,15 +26,17 @@ Scoring (integer 1-10):
 - 1-2: unrelated field, senior/manager level, or on-site outside Kenya.
 Job ads may be short; judge mainly from the title, company and any details given. Do not invent requirements.
 If one ad lists several vacancies, score the best-matching one and name it in the reason.
-Reason: one short sentence (max 20 words) saying why, written to the candidate ("you").`;
+Reason: one short sentence (max 20 words) saying why, written to the candidate ("you").
+Salary: the pay exactly as the ad states it (amount, currency, period), e.g. "KES 100,000–150,000 per month". Empty string if the ad does not state pay. Never estimate or guess.`;
 
 const SCHEMA = {
   type: "object",
   properties: {
     score: { type: "integer", minimum: 1, maximum: 10 },
     reason: { type: "string" },
+    salary: { type: "string" },
   },
-  required: ["score", "reason"],
+  required: ["score", "reason", "salary"],
 };
 
 /** `full` sends the whole job text (second look) instead of the feed summary. */
@@ -73,5 +77,5 @@ export function parseScore(out: unknown): Score {
   const r = raw as Partial<Score>;
   const score = Math.round(Number(r.score));
   if (!Number.isFinite(score) || score < 1 || score > 10) throw new Error(`bad AI score: ${JSON.stringify(raw)}`);
-  return { score, reason: String(r.reason ?? "").slice(0, 200) };
+  return { score, reason: String(r.reason ?? "").slice(0, 200), salary: typeof r.salary === "string" ? r.salary : undefined };
 }

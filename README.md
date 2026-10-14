@@ -98,6 +98,16 @@ Jobs scoring 3+ get a second AI look on the full job text: from the feed when it
 (JobWebKenya, Opportunities for Young Kenyans, Fuzu, Telegram) or from the job page (schema.org
 JSON-LD where available). Closing dates are shown in alerts and closed jobs are never sent.
 
+## Pay in alerts
+Shown as 💰 with its basis, never guessed (`src/salary.ts`):
+- **(advertised)**: stated in the ad: Nakuru pay ranges, Fuzu/JSON-LD pay fields (junk values filtered),
+  or pay the AI finds in the ad text (kept only if its numbers appear in the ad).
+- **CSG n civil service scale**: ads quoting a CSG grade get the official SRC basic-pay band
+  (Phase II, effective 1 July 2026).
+- **UNTalent estimate**: UNTalent’s own monthly figure for UN posts.
+
+Upgrading an older database: `npx wrangler d1 execute job-scraper --remote --file=migrations/004_salary.sql`
+
 ## Daily round-up
 Every day at 07:00 Nairobi (or `/today`): jobs checked and alerts sent in the last 24 h, the best
 matches, and near misses that scored just under your threshold.

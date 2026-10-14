@@ -33,6 +33,8 @@ export interface Job {
   /** Application deadline from the job page, formatted for display. */
   deadline?: string;
   deadlineAt?: number;
+  /** Pay with its basis, e.g. "KES 46,120–65,860/month (advertised)". See src/salary.ts. */
+  salary?: string;
   /** AI fit score 1-10 against the CV, with a one-line reason. */
   score?: number;
   scoreReason?: string;

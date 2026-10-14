@@ -1,4 +1,5 @@
 import type { Job } from "./types";
+import { salaryFromJsonLd } from "./salary";
 import { formatNairobi, USER_AGENT } from "./types";
 
 export interface Details {
@@ -7,6 +8,7 @@ export interface Details {
   deadline?: string;
   /** Application deadline as unix ms, to skip jobs that have already closed. */
   deadlineAt?: number;
+  salary?: string;
 }
 
 const MAX_TEXT = 3000;
@@ -54,11 +56,12 @@ export function extractDetails(html: string, marker?: RegExp): Details {
     text: text ? text.slice(0, MAX_TEXT) : undefined,
     deadline: valid ? formatNairobi(until).split(",")[0] : undefined,
     deadlineAt: valid ? until.getTime() : undefined,
+    salary: ld ? salaryFromJsonLd(ld) : undefined,
   };
 }
 
 /** The schema.org JobPosting object, if the page has one. */
-function jobPostingLd(html: string): { description?: string; validThrough?: string } | undefined {
+function jobPostingLd(html: string): ({ description?: string; validThrough?: string } & Parameters<typeof salaryFromJsonLd>[0]) | undefined {
   for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)) {
     try {
       const data = JSON.parse(m[1]);

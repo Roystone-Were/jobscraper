@@ -24,6 +24,7 @@ const PAGE: Partial<Record<Job["source"], { marker?: RegExp }>> = {
   corporatestaffing: {},
   untalent: {},
   impactpool: { marker: /<[a-z]+[^>]*job-description/ },
+  etalent: {},
   // LinkedIn is left out on purpose: every extra request makes its search
   // requests more likely to be rate-limited.
 };

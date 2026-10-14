@@ -13,6 +13,7 @@ export const SOURCE_LABELS: Record<Job["source"], string> = {
   impactpool: "Impactpool",
   telegram: "Telegram channel",
   employer: "Company careers page",
+  etalent: "eTalent",
   fuzu: "Fuzu",
   kenyajob: "Kenyajob",
   psc: "Public Service Commission",

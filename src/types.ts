@@ -11,6 +11,7 @@ export interface Job {
     | "impactpool"
     | "telegram"
     | "employer"
+    | "etalent"
     | "fuzu"
     | "kenyajob"
     | "psc"

@@ -202,3 +202,42 @@ export function parseNakuru(html: string): Job[] {
   }
   return jobs;
 }
+
+// ---------- eTalent: hosted job boards used by Kenyan employers and agencies.
+
+/** Boards on etalent.net: subdomain → organisation. */
+export const ETALENT_BOARDS = [{ slug: "peoplefoco", name: "People Foco Agency" }];
+
+export async function fetchEtalent(board: (typeof ETALENT_BOARDS)[number]): Promise<Job[]> {
+  return parseEtalent(await get(`https://${board.slug}.etalent.net/`, `eTalent ${board.slug}`), board);
+}
+
+export function parseEtalent(html: string, board: (typeof ETALENT_BOARDS)[number]): Job[] {
+  const jobs: Job[] = [];
+  const t = html.indexOf("<tbody");
+  if (t < 0) return jobs;
+  // Columns: Reference | Title | Location | Salary | Closing date | actions
+  for (const row of html.slice(t, html.indexOf("</tbody>", t)).split("<tr").slice(1)) {
+    const link = row.match(/<a href="(\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+    const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((c) => cleanText(c[1]));
+    if (!link || cells.length < 5) continue;
+    const [ref, , location, pay] = cells;
+    // Show the date as the board prints it: its timestamp is 23:59 UTC, which is
+    // already the next day in Nairobi.
+    const closes = row.match(/<time datetime="([^"]+)"[^>]*>([^<]*)<\/time>/);
+    const at = closes ? Date.parse(closes[1]) : NaN;
+    jobs.push({
+      id: `etalent:${board.slug}:${ref || link[1]}`,
+      source: "etalent",
+      title: cleanText(link[2]),
+      company: board.name,
+      location: location?.replace(/\s*,\s*\d{5}$/, ""),
+      // Only when an amount is given ("per month" alone means undisclosed).
+      salary: /\d/.test(pay ?? "") ? `KES ${pay.replace(/KSh\s?/g, "").replace(/\s+to\s+/, "–")} (advertised)` : undefined,
+      deadline: closes?.[2].trim() || undefined,
+      deadlineAt: Number.isNaN(at) ? undefined : at,
+      url: `https://${board.slug}.etalent.net${link[1]}`,
+    });
+  }
+  return jobs;
+}

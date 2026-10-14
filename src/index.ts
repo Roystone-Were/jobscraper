@@ -11,7 +11,7 @@ import { fetchImpactpool } from "./sources/impactpool";
 import { EMPLOYERS, fetchEmployer } from "./sources/employers";
 import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
 // Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
-import { FUZU_PAGES, fetchFuzu, fetchIcta, fetchNakuru, fetchPsc } from "./sources/boards";
+import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchIcta, fetchNakuru, fetchPsc } from "./sources/boards";
 import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
@@ -49,6 +49,7 @@ const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
   { name: "nakuru", fetch: fetchNakuru },
   { name: "kiambu", fetch: () => fetchRss(KIAMBU_FEED) },
   ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
+  ...ETALENT_BOARDS.map((b) => ({ name: `etalent:${b.slug}`, fetch: () => fetchEtalent(b) })),
 ];
 
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
@@ -97,9 +98,10 @@ export default {
     // GET /run?key=<RUN_KEY> triggers a run by hand with every LinkedIn search;
     // add &linkedin=0 to skip LinkedIn (it rate-limits bursts).
     if (url.pathname === "/run" && authorized) {
-      // &secondary=all fetches every rotating source this run.
+      // &secondary=all fetches every rotating source this run; &secondary=<name>
+      // (e.g. etalent:peoplefoco) fetches just that one.
       return Response.json(
-        await run(env, new Date(), url.searchParams.get("linkedin") !== "0", url.searchParams.get("linkedin") === "0", url.searchParams.get("secondary") === "all"),
+        await run(env, new Date(), url.searchParams.get("linkedin") !== "0", url.searchParams.get("linkedin") === "0", url.searchParams.get("secondary") ?? undefined),
       );
     }
 
@@ -166,7 +168,7 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, allSecondary = false) {
+async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, secondary?: string) {
   const settings = await loadSettings(env);
   const tasks: { name: string; fetch: () => Promise<Job[]> }[] = [];
 
@@ -183,9 +185,11 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   tasks.push({ name: "impactpool", fetch: fetchImpactpool });
 
   const tenMin = Math.floor(now.getTime() / 600_000);
-  const take = allSecondary ? SECONDARY.length : Math.min(SECONDARY_PER_RUN, SECONDARY.length);
-  for (let i = 0; i < take; i++) {
-    tasks.push(SECONDARY[(tenMin * take + i) % SECONDARY.length]);
+  if (secondary && secondary !== "all") {
+    tasks.push(...SECONDARY.filter((s) => s.name === secondary));
+  } else {
+    const take = secondary === "all" ? SECONDARY.length : Math.min(SECONDARY_PER_RUN, SECONDARY.length);
+    for (let i = 0; i < take; i++) tasks.push(SECONDARY[(tenMin * take + i) % SECONDARY.length]);
   }
 
   // LinkedIn blocks bursts, so each run takes the next few searches from the

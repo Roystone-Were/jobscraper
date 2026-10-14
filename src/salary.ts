@@ -56,7 +56,8 @@ export function salaryFromJsonLd(post: {
   const max = Number(v?.maxValue) || 0;
   const unit = (v?.unitText || "MONTH").toLowerCase();
   // Plausible monthly KES pay only (e.g. JobWebKenya fills in 1,866–3,733).
-  if (cur === "KES" && unit.includes("month") && min >= 10_000) return `${kesRange(min, max)}/month (advertised)`;
+  // eTalent leaves the currency blank on Kenyan jobs; treat blank as KES.
+  if ((cur === "KES" || cur === "") && unit.includes("month") && min >= 10_000) return `${kesRange(min, max)}/month (advertised)`;
 
   const est = Number(post.estimatedSalary);
   if (est > 0 && post.salaryCurrency) return `≈ ${post.salaryCurrency} ${n(est)}/month (UNTalent estimate)`;

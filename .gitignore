@@ -4,3 +4,6 @@ node_modules/
 
 # Personal CV profile for AI scoring (see src/profile.example.ts)
 src/profile.ts
+
+# Local copies of Cloudflare secrets (never commit)
+.secrets/

@@ -1,4 +1,4 @@
-import { cleanText, type Job, USER_AGENT } from "../types";
+import { cleanText, formatNairobi, type Job, USER_AGENT } from "../types";
 
 /** WordPress-style RSS job feeds. */
 export const RSS_FEEDS = [
@@ -90,9 +90,7 @@ export function parseRss(xml: string, feed: Feed): Job[] {
       title,
       company,
       description: description ? fixMojibake(cleanText(description)) : undefined,
-      posted: pubDate
-        ? new Date(pubDate).toLocaleString("en-KE", { timeZone: "Africa/Nairobi", dateStyle: "medium", timeStyle: "short" })
-        : undefined,
+      posted: pubDate ? formatNairobi(new Date(pubDate)) : undefined,
       url: link,
     });
   }

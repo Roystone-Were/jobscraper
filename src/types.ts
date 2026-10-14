@@ -1,7 +1,15 @@
 export interface Job {
   /** Unique across sources: "<source>:<site job id>". */
   id: string;
-  source: "myjobmag-ke" | "brightermonday" | "jobwebkenya" | "oyk" | "linkedin";
+  source:
+    | "myjobmag-ke"
+    | "brightermonday"
+    | "jobwebkenya"
+    | "oyk"
+    | "corporatestaffing"
+    | "untalent"
+    | "impactpool"
+    | "linkedin";
   title: string;
   company?: string;
   location?: string;
@@ -33,7 +41,8 @@ export interface Env {
   MYJOBMAG_QUERIES: string;
   LINKEDIN_KEYWORDS: string;
   LINKEDIN_LOCATION: string;
-  LINKEDIN_EVERY_MINUTES: string;
+  /** LinkedIn searches per run, rotating through LINKEDIN_KEYWORDS. */
+  LINKEDIN_PER_RUN: string;
   /** "on" / "off". Overridable from Telegram with /ai. */
   AI_SCORING: string;
   /** Minimum AI score (1-10) to send an alert. Overridable with /minscore. */
@@ -66,4 +75,13 @@ export function decodeEntities(s: string): string {
 
 export function cleanText(s: string): string {
   return decodeEntities(s.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+// Creating an Intl formatter costs ~10 ms of CPU the first time, so share one.
+let nairobiFormat: Intl.DateTimeFormat | undefined;
+
+/** "14 Oct 2026, 17:20" in Nairobi time. */
+export function formatNairobi(date: Date): string {
+  nairobiFormat ??= new Intl.DateTimeFormat("en-KE", { timeZone: "Africa/Nairobi", dateStyle: "medium", timeStyle: "short" });
+  return nairobiFormat.format(date);
 }

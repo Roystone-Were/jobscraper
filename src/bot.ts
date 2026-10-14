@@ -1,3 +1,4 @@
+import { buildDigest } from "./digest";
 import { getSetting, loadSettings, type Settings, setSetting } from "./settings";
 import { escape, jobKeyboard, SOURCE_LABELS, tg } from "./telegram";
 import type { Env, Job } from "./types";
@@ -15,6 +16,7 @@ export const COMMANDS = [
   ["minscore", "Min AI score to alert: /minscore 7"],
   ["ai", "AI scoring on/off: /ai off"],
   ["saved", "Jobs you saved"],
+  ["digest", "Site health report (also sent Mondays)"],
   ["pause", "Stop alerts"],
   ["resume", "Start alerts again"],
   ["help", "List commands"],
@@ -112,6 +114,9 @@ Usage: /minscore 7 (1-10)`);
         : "AI scoring off: alerts use title keywords only (/keywords).");
     }
 
+    case "digest":
+      return reply(env, await buildDigest(env));
+
     case "pause":
       await setSetting(env.DB, "paused", "1");
       return reply(env, "⏸ Alerts paused. Jobs found while paused are skipped, not saved up. /resume to restart.");
@@ -160,7 +165,7 @@ async function statusText(env: Env, settings: Settings) {
     getSetting(env.DB, "ai_usage"),
   ]);
 
-  const lines = [`<b>Status:</b> ${paused ? "⏸ paused" : "▶️ running every minute"}`];
+  const lines = [`<b>Status:</b> ${paused ? "⏸ paused" : "▶️ running every 10 min (hourly 11 pm–7 am)"}`];
   if (lastRunRaw) {
     const r = JSON.parse(lastRunRaw) as { at: number; fetched: number; errors: string[] };
     const ago = Math.round((Date.now() - r.at) / 60_000);

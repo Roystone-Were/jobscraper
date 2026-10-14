@@ -1,8 +1,12 @@
 import { scoreJob } from "./ai";
 import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
+import { recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
 import { getSetting, loadSettings, setSetting } from "./settings";
 import { fetchBrighterMonday } from "./sources/brightermonday";
+import { fetchCorporateStaffing } from "./sources/corporatestaffing";
+import { fetchImpactpool } from "./sources/impactpool";
+import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
 import { fetchRss, RSS_FEEDS } from "./sources/rss";
@@ -14,13 +18,26 @@ import { type Env, type Job, splitList } from "./types";
  * on the next run, which keeps us under Telegram's rate limits and the Workers
  * free-plan limit of 50 outbound requests per invocation.
  */
-const MAX_NOTIFICATIONS_PER_RUN = 20;
+const MAX_NOTIFICATIONS_PER_RUN = 15;
 
-/** AI calls per run; the rest wait a minute. Keeps each run well inside request limits. */
-const AI_PER_RUN = 8;
+/**
+ * AI calls per run; the rest wait for the next run. With 7 sites, 2 LinkedIn
+ * searches and 15 Telegram sends this keeps a run under the free plan's 50
+ * outbound requests.
+ */
+const AI_PER_RUN = 15;
+
+/** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
+export const DIGEST_CRON = "0 5 * * 1";
 
 export default {
   async scheduled(controller, env, ctx) {
+    if (controller.cron === DIGEST_CRON) {
+      ctx.waitUntil(
+        sendWeeklyDigest(env, (html) => sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, html)),
+      );
+      return;
+    }
     ctx.waitUntil(run(env, new Date(controller.scheduledTime)));
   },
 
@@ -51,11 +68,12 @@ export default {
     // GET /score-test?key=<RUN_KEY>&n=10 scores recent jobs without sending anything.
     if (url.pathname === "/score-test" && authorized) {
       const n = Math.min(10, Number(url.searchParams.get("n")) || 8);
-      // &title=...&company=...&location=... scores one made-up ad.
+      // &title=...&company=...&location=...&details=... scores one ad.
       const title = url.searchParams.get("title");
       if (title) {
         const ad = { id: "", url: "", source: "linkedin" as const, title,
-          company: url.searchParams.get("company") ?? undefined, location: url.searchParams.get("location") ?? undefined };
+          company: url.searchParams.get("company") ?? undefined, location: url.searchParams.get("location") ?? undefined,
+          description: url.searchParams.get("details") ?? undefined };
         return Response.json({ title, ...(await scoreJob(env.AI, ad)) });
       }
       // Optional &source=linkedin to sample a specific board.
@@ -106,18 +124,30 @@ async function run(env: Env, now: Date, forceAll = false) {
     tasks.push({ name: `myjobmag:${q}`, fetch: () => fetchMyJobMag(q) });
   }
   tasks.push({ name: "brightermonday", fetch: fetchBrighterMonday });
+  tasks.push({ name: "corporatestaffing", fetch: fetchCorporateStaffing });
+  tasks.push({ name: "untalent", fetch: fetchUnTalent });
+  tasks.push({ name: "impactpool", fetch: fetchImpactpool });
 
-  // LinkedIn blocks bursts, so run one search every N minutes, rotating
-  // through the keyword list. A manual /run fires all of them.
+  // LinkedIn blocks bursts, so each run takes the next few searches from the
+  // keyword list (rotating by 10-minute slot), a few seconds apart.
+  // A manual /run fires all of them.
   const liKeywords = splitList(env.LINKEDIN_KEYWORDS);
-  const everyMin = Math.max(1, Number(env.LINKEDIN_EVERY_MINUTES) || 2);
-  const slot = Math.floor(now.getTime() / 60_000);
-  const liDue = forceAll ? liKeywords : slot % everyMin === 0 && liKeywords.length
-    ? [liKeywords[(slot / everyMin) % liKeywords.length]]
-    : [];
-  for (const kw of liDue) {
-    tasks.push({ name: `linkedin:${kw}`, fetch: () => fetchLinkedIn(kw, env.LINKEDIN_LOCATION) });
-  }
+  const perRun = Math.max(1, Number(env.LINKEDIN_PER_RUN) || 2);
+  const slot = Math.floor(now.getTime() / 600_000);
+  const liDue = forceAll
+    ? liKeywords
+    : liKeywords.length
+      ? [...new Set(Array.from({ length: Math.min(perRun, liKeywords.length) }, (_, i) => liKeywords[(slot * perRun + i) % liKeywords.length]))]
+      : [];
+  liDue.forEach((kw, i) => {
+    tasks.push({
+      name: `linkedin:${kw}`,
+      fetch: async () => {
+        await new Promise((r) => setTimeout(r, i * 4000));
+        return fetchLinkedIn(kw, env.LINKEDIN_LOCATION);
+      },
+    });
+  });
 
   const results = await Promise.allSettled(tasks.map((t) => t.fetch()));
   const errors: string[] = [];
@@ -130,6 +160,14 @@ async function run(env: Env, now: Date, forceAll = false) {
     for (const job of r.value) byId.set(job.id, job);
   });
   errors.forEach((e) => console.warn(e));
+  await recordHealth(
+    env.DB,
+    now.getTime(),
+    results.map((r, i) => ({
+      source: sourceOfTask(tasks[i].name),
+      ...(r.status === "fulfilled" ? { jobs: r.value.length } : { error: String(r.reason) }),
+    })),
+  );
 
   // The same job often appears on several boards; keep the first copy.
   const fetched: Job[] = [];

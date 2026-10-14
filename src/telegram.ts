@@ -8,6 +8,9 @@ export const SOURCE_LABELS: Record<Job["source"], string> = {
   brightermonday: "BrighterMonday",
   jobwebkenya: "JobWebKenya",
   oyk: "Opportunities for Young Kenyans",
+  corporatestaffing: "Corporate Staffing",
+  untalent: "UNTalent",
+  impactpool: "Impactpool",
   linkedin: "LinkedIn",
 };
 

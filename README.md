@@ -1,11 +1,12 @@
 # Job Scraper
 
-Checks MyJobMag Kenya, BrighterMonday, JobWebKenya and Opportunities for Young Kenyans
-(every minute) plus LinkedIn (one search every 2 min, rotating) for new jobs and sends
+Checks MyJobMag Kenya, BrighterMonday, JobWebKenya, Opportunities for Young Kenyans,
+Corporate Staffing, UNTalent (UN IT & Telecom jobs in Kenya) and Impactpool
+every 10 minutes (hourly 11 pm–7 am Nairobi), plus 2 rotating LinkedIn searches per run, and sends
 them to Telegram. Runs free on Cloudflare Workers — no card needed.
 
 ```
-Cron (every minute) → job sites + LinkedIn → merge duplicates → AI score vs CV → D1 "seen" table → Telegram
+Cron (every 10 min; hourly at night) → job sites + LinkedIn → merge duplicates → AI score vs CV → D1 "seen" table → Telegram
 ```
 
 ## One-time setup
@@ -50,7 +51,7 @@ Edit `vars` in `wrangler.jsonc` (all comma-separated):
 | `MYJOBMAG_QUERIES` | `software developer` | Optional extra MyJobMag searches. The latest 100 jobs always come from MyJobMag's feed. |
 | `LINKEDIN_KEYWORDS` | `software engineer, backend` | LinkedIn searches. Empty = LinkedIn off. |
 | `LINKEDIN_LOCATION` | `Kenya` / `Nairobi` / `Remote` | LinkedIn location filter. |
-| `LINKEDIN_EVERY_MINUTES` | `2` | Run the next LinkedIn search every N minutes (searches rotate). |
+| `LINKEDIN_PER_RUN` | `2` | LinkedIn searches per run, rotating through the list. |
 
 Keep searches to ~10 total — the free plan allows 50 outbound requests per run.
 
@@ -79,7 +80,7 @@ Every new job (after `EXCLUDE_KEYWORDS`) is rated 1-10 against the profile in `s
 by Workers AI (`@cf/google/gemma-4-26b-a4b-it`, free allowance, no card). Jobs at or above
 `MIN_SCORE` (default 6) are sent with the score and a one-line reason.
 
-- Up to 8 jobs are scored per run; extras wait a minute. `AI_DAILY_LIMIT` (default 600/day) caps usage;
+- Up to 15 jobs are scored per run; extras wait for the next run. `AI_DAILY_LIMIT` (default 600/day) caps usage;
   past it, or if the AI errors, the title keywords decide instead.
 - Telegram: `/minscore 7`, `/ai off` / `/ai on`. `/status` shows today’s usage.
 - Your profile lives in `src/profile.ts`, which is git-ignored so your work history stays private.

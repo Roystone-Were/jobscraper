@@ -8,7 +8,7 @@ export interface Settings {
   minScore: number;
 }
 
-type Key = "include_keywords" | "exclude_keywords" | "paused" | "last_run" | "ai_scoring" | "min_score" | "ai_usage";
+type Key = "include_keywords" | "exclude_keywords" | "paused" | "last_run" | "ai_scoring" | "min_score" | "ai_usage" | "source_health";
 
 async function readAll(db: D1Database): Promise<Map<string, string>> {
   const { results } = await db.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();

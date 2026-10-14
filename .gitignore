@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+
+# Personal CV profile for AI scoring (see src/profile.example.ts)
+src/profile.ts

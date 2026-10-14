@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "job-scraper",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+
+  // Runs every minute. LinkedIn is polled less often (see LINKEDIN_EVERY_MINUTES).
+  "triggers": { "crons": ["* * * * *"] },
+
+  // Workers AI (free allowance, no card) for scoring jobs against the CV.
+  "ai": { "binding": "AI" },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "job-scraper",
+      // Filled in by `npx wrangler d1 create job-scraper` (see README).
+      "database_id": "8e85b785-1eb5-46c6-ad2f-db71155f91a9"
+    }
+  ],
+
+  "vars": {
+    // Comma-separated, whole words in the job title. Empty = everything. Not applied to LinkedIn.
+    "INCLUDE_KEYWORDS": "IT, ICT, software, developer, programmer, network, networking, systems administrator, system administrator, sysadmin, cyber, cybersecurity, information security, helpdesk, help desk, service desk, technical support, desktop support, cloud, database, web developer, full stack, fullstack, frontend, front-end, backend, back-end",
+    // Comma-separated, whole words. Any match in the title drops the job (all sources).
+    "EXCLUDE_KEYWORDS": "business developer, property developer, real estate developer",
+
+    // Optional extra MyJobMag searches. The latest 100 jobs always come from its feed.
+    "MYJOBMAG_QUERIES": "",
+
+    // Comma-separated LinkedIn searches, run one at a time in rotation. Empty = LinkedIn off.
+    "LINKEDIN_KEYWORDS": "software developer, IT support, network engineer, network administrator, network technician, systems administrator, cyber security",
+    "LINKEDIN_LOCATION": "Kenya",
+    // Run the next LinkedIn search every N minutes. Lower = more likely to get blocked.
+    "LINKEDIN_EVERY_MINUTES": "2",
+
+    // AI scoring against the CV (src/profile.ts). Telegram: /ai on|off, /minscore N.
+    "AI_SCORING": "on",
+    "MIN_SCORE": "6",
+    // Safety cap per day (free allowance covers ~1,000). Over it, keywords are used.
+    "AI_DAILY_LIMIT": "600"
+  },
+
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "job-scraper",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc",
+    "db:init": "wrangler d1 execute job-scraper --remote --file=schema.sql",
+    "logs": "wrangler tail"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261014.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.151.0"
+  },
+  "private": true
+}

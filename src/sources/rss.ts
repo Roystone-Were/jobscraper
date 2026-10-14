@@ -1,3 +1,4 @@
+import { htmlToText } from "../details";
 import { cleanText, formatNairobi, type Job, USER_AGENT } from "../types";
 
 /** WordPress-style RSS job feeds. */
@@ -20,9 +21,26 @@ export const RSS_FEEDS = [
     // Titles are headlines ("Nakuru County ... Hiring Clerical Officers").
     splitCompany: false,
   },
-] as const satisfies { source: Job["source"]; url: string; splitCompany: boolean }[];
+] as const satisfies Feed[];
 
-type Feed = (typeof RSS_FEEDS)[number];
+export interface Feed {
+  source: Job["source"];
+  url: string;
+  splitCompany: boolean;
+  /** Optional title filter, for feeds that mix job adverts with other posts. */
+  keep?: RegExp;
+  /** Skip items older than this (for feeds without closing dates). */
+  maxAgeDays?: number;
+}
+
+/** Kiambu County careers feed: mixes adverts with shortlists and results. */
+export const KIAMBU_FEED: Feed = {
+  source: "kiambu",
+  url: "https://kiambu.go.ke/careers/feed/",
+  splitCompany: false,
+  keep: /vacanc|advert|recruit|position|officer|job/i,
+  maxAgeDays: 30,
+};
 
 export async function fetchRss(feed: Feed): Promise<Job[]> {
   const res = await fetch(feed.url, { headers: { "User-Agent": USER_AGENT } });
@@ -73,6 +91,7 @@ export function parseRss(xml: string, feed: Feed): Job[] {
     if (!rawTitle || !link) continue;
 
     let title = fixMojibake(cleanText(rawTitle));
+    if (feed.keep && (!feed.keep.test(title) || /shortlist|result|interview|successful/i.test(title))) continue;
     let company: string | undefined;
     if (feed.splitCompany) {
       const at = title.lastIndexOf(" at ");
@@ -83,6 +102,9 @@ export function parseRss(xml: string, feed: Feed): Job[] {
     const description = tag("description")
       ?.replace(/<p>The post [\s\S]*$/, "");
     const pubDate = tag("pubDate");
+    if (feed.maxAgeDays && pubDate && Date.now() - Date.parse(pubDate) > feed.maxAgeDays * 86_400_000) continue;
+    // WordPress feeds carry the whole post here; kept for the AI's second look.
+    const body = tag("content:encoded");
 
     jobs.push({
       id: `${feed.source}:${cleanText(tag("guid") ?? link)}`,
@@ -91,6 +113,7 @@ export function parseRss(xml: string, feed: Feed): Job[] {
       company,
       description: description ? fixMojibake(cleanText(description)) : undefined,
       posted: pubDate ? formatNairobi(new Date(pubDate)) : undefined,
+      details: body ? fixMojibake(htmlToText(body)).slice(0, 3000) : undefined,
       url: link,
     });
   }

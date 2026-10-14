@@ -23,6 +23,7 @@ Scoring (integer 1-10):
 - 3-4: weak link to the candidate's skills.
 - 1-2: unrelated field, senior/manager level, or on-site outside Kenya.
 Job ads may be short; judge mainly from the title, company and any details given. Do not invent requirements.
+If one ad lists several vacancies, score the best-matching one and name it in the reason.
 Reason: one short sentence (max 20 words) saying why, written to the candidate ("you").`;
 
 const SCHEMA = {
@@ -34,12 +35,15 @@ const SCHEMA = {
   required: ["score", "reason"],
 };
 
-export async function scoreJob(ai: Ai, job: Job): Promise<Score> {
+/** `full` sends the whole job text (second look) instead of the feed summary. */
+export async function scoreJob(ai: Ai, job: Job, full = false): Promise<Score> {
+  const body = full && job.details ? job.details.slice(0, 3000) : job.description?.slice(0, 1200);
   const ad = [
     `Title: ${job.title}`,
     job.company && `Company: ${job.company}`,
     job.location && `Location: ${job.location}`,
-    job.description && `Details: ${job.description.slice(0, 1200)}`,
+    job.deadline && `Deadline: ${job.deadline}`,
+    body && `Details: ${body}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -51,7 +55,7 @@ export async function scoreJob(ai: Ai, job: Job): Promise<Score> {
     ],
     response_format: { type: "json_schema", json_schema: { name: "job_score", schema: SCHEMA, strict: true } },
     chat_template_kwargs: { enable_thinking: false },
-    temperature: 0.2,
+    temperature: 0, // same job, same score
     max_completion_tokens: 120,
   } as never)) as unknown;
 

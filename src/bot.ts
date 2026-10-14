@@ -1,4 +1,4 @@
-import { buildDigest } from "./digest";
+import { buildDaily, buildDigest } from "./digest";
 import { getSetting, loadSettings, type Settings, setSetting } from "./settings";
 import { escape, jobKeyboard, SOURCE_LABELS, tg } from "./telegram";
 import type { Env, Job } from "./types";
@@ -16,6 +16,7 @@ export const COMMANDS = [
   ["minscore", "Min AI score to alert: /minscore 7"],
   ["ai", "AI scoring on/off: /ai off"],
   ["saved", "Jobs you saved"],
+  ["today", "Last 24 h round-up (also sent 7 am)"],
   ["digest", "Site health report (also sent Mondays)"],
   ["pause", "Stop alerts"],
   ["resume", "Start alerts again"],
@@ -113,6 +114,9 @@ Usage: /minscore 7 (1-10)`);
         ? "🤖 AI scoring on: jobs are rated against your CV."
         : "AI scoring off: alerts use title keywords only (/keywords).");
     }
+
+    case "today":
+      return reply(env, await buildDaily(env, settings.minScore));
 
     case "digest":
       return reply(env, await buildDigest(env));

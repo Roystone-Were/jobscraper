@@ -1,9 +1,14 @@
 # Job Scraper
 
-Checks MyJobMag Kenya, BrighterMonday, JobWebKenya, Opportunities for Young Kenyans,
-Corporate Staffing, UNTalent (UN IT & Telecom jobs in Kenya) and Impactpool
-every 10 minutes (hourly 11 pm–7 am Nairobi), plus 2 rotating LinkedIn searches per run, and sends
-them to Telegram. Runs free on Cloudflare Workers — no card needed.
+Checks Kenyan job sources and sends good matches to Telegram. Runs free on Cloudflare Workers — no card needed.
+
+- **Every run:** MyJobMag Kenya, BrighterMonday, JobWebKenya, Opportunities for Young Kenyans,
+  Corporate Staffing, UNTalent (UN IT & Telecom, Kenya), Impactpool.
+- **Rotating, 6 per run:** Fuzu (latest + IT category), Public Service Commission, ICT Authority,
+  Nakuru and Kiambu county boards, Telegram channels (`src/sources/telegram.ts`), and 15 employers'
+  careers boards via their public ATS APIs (`src/sources/employers.ts`, Kenya-located jobs only).
+- **LinkedIn:** 2 rotating searches per run.
+- Runs every 10 minutes (hourly 11 pm–7 am Nairobi). Kenyajob.com is parsed but disabled: it returns 403 to Cloudflare.
 
 ```
 Cron (every 10 min; hourly at night) → job sites + LinkedIn → merge duplicates → AI score vs CV → D1 "seen" table → Telegram
@@ -88,6 +93,15 @@ by Workers AI (`@cf/google/gemma-4-26b-a4b-it`, free allowance, no card). Jobs a
 - Calibrate: `/score-test?key=<RUN_KEY>&title=Network%20Engineer&company=Safaricom` (or `&source=linkedin&n=10` to score stored jobs).
 - Upgrading an older database: `npx wrangler d1 execute job-scraper --remote --file=migrations/003_ai_score.sql`
 
+## Second look & closing dates
+Jobs scoring 3+ get a second AI look on the full job text: from the feed when it carries it
+(JobWebKenya, Opportunities for Young Kenyans, Fuzu, Telegram) or from the job page (schema.org
+JSON-LD where available). Closing dates are shown in alerts and closed jobs are never sent.
+
+## Daily round-up
+Every day at 07:00 Nairobi (or `/today`): jobs checked and alerts sent in the last 24 h, the best
+matches, and near misses that scored just under your threshold.
+
 ## Telegram commands & buttons
 Each alert has **⭐ Save**, **👎 Not interested** (collapses it, with Undo) and **Open job** buttons.
 
@@ -99,6 +113,7 @@ Each alert has **⭐ Save**, **👎 Not interested** (collapses it, with Undo) a
 | `/exclude a` · `/unexclude a` | Skip titles containing these words |
 | `/resetkeywords` | Back to the lists in `wrangler.jsonc` |
 | `/minscore 7` · `/ai on|off` | AI alert threshold / switch scoring |
+| `/today` · `/digest` | Daily round-up · weekly site-health report |
 | `/saved` | Jobs you starred |
 | `/pause` · `/resume` | Stop / restart alerts |
 

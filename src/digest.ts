@@ -127,3 +127,57 @@ export async function sendWeeklyDigest(env: Env, send: (html: string) => Promise
   for (const h of Object.values(health)) if (h) Object.assign(h, { ok: 0, fail: 0, empty: 0 });
   await setSetting(env.DB, "source_health", JSON.stringify(health));
 }
+
+interface Row {
+  title: string;
+  company: string | null;
+  url: string;
+  source: Job["source"];
+  score: number;
+  score_reason: string | null;
+}
+
+/** Morning round-up of the last 24 hours. */
+export async function buildDaily(env: Env, minScore: number, now = Date.now()): Promise<string> {
+  const since = now - DAY;
+  const [counts, sent, nearMisses, health] = await Promise.all([
+    env.DB.prepare(
+      "SELECT COUNT(*) AS jobs, SUM(score IS NOT NULL) AS scored, SUM(notified_at >= ?1) AS alerts FROM seen_jobs WHERE first_seen >= ?1",
+    )
+      .bind(since)
+      .first<{ jobs: number; scored: number; alerts: number }>(),
+    env.DB.prepare(
+      "SELECT title, company, url, source, score, score_reason FROM seen_jobs WHERE notified_at >= ? ORDER BY score DESC, notified_at DESC LIMIT 10",
+    )
+      .bind(since)
+      .all<Row>(),
+    // Just under the bar: worth a glance even though no alert was sent.
+    env.DB.prepare(
+      "SELECT title, company, url, source, score, score_reason FROM seen_jobs WHERE first_seen >= ? AND notified_at IS NULL AND score BETWEEN ? AND ? ORDER BY score DESC, first_seen DESC LIMIT 5",
+    )
+      .bind(since, Math.max(1, minScore - 2), minScore - 1)
+      .all<Row>(),
+    getSetting(env.DB, "source_health"),
+  ]);
+
+  const line = (r: Row) =>
+    `<b>${r.score}/10</b> · <a href="${escape(r.url)}">${escape(r.title)}</a>${r.company ? ` — ${escape(r.company)}` : ""}` +
+    ` <i>(${escape(SOURCE_LABELS[r.source] ?? r.source)})</i>`;
+
+  const h = JSON.parse(health ?? "{}") as Health;
+  const down = (Object.entries(h) as [Job["source"], SourceHealth][])
+    .filter(([, s]) => !s.lastOk || now - s.lastOk > DAY / 4)
+    .map(([src]) => SOURCE_LABELS[src] ?? src);
+
+  const out = [
+    "☀️ <b>Your daily job round-up</b>",
+    `${counts?.jobs ?? 0} new jobs checked in the last 24 h · ${counts?.alerts ?? 0} sent to you`,
+    "",
+    sent.results.length ? `🎯 <b>Best matches</b>\n${sent.results.map(line).join("\n")}` : "🎯 No strong matches in the last 24 h.",
+  ];
+  if (nearMisses.results.length) {
+    out.push("", `🤔 <b>Near misses</b> (scored just under ${minScore}, not sent)`, ...nearMisses.results.map(line));
+  }
+  if (down.length) out.push("", `⚠️ Not loading for 6 h+: ${down.join(", ")} — /digest for details`);
+  return out.join("\n");
+}

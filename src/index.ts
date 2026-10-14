@@ -1,15 +1,20 @@
 import { scoreJob } from "./ai";
 import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
-import { recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
+import { fetchDetails, hasDetailPage } from "./details";
+import { buildDaily, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
 import { getSetting, loadSettings, setSetting } from "./settings";
 import { fetchBrighterMonday } from "./sources/brightermonday";
 import { fetchCorporateStaffing } from "./sources/corporatestaffing";
 import { fetchImpactpool } from "./sources/impactpool";
+import { EMPLOYERS, fetchEmployer } from "./sources/employers";
+import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
+// Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
+import { FUZU_PAGES, fetchFuzu, fetchIcta, fetchNakuru, fetchPsc } from "./sources/boards";
 import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
-import { fetchRss, RSS_FEEDS } from "./sources/rss";
+import { fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
 import { formatJob, jobKeyboard, sendTelegram, tg } from "./telegram";
 import { type Env, type Job, splitList } from "./types";
 
@@ -18,23 +23,51 @@ import { type Env, type Job, splitList } from "./types";
  * on the next run, which keeps us under Telegram's rate limits and the Workers
  * free-plan limit of 50 outbound requests per invocation.
  */
-const MAX_NOTIFICATIONS_PER_RUN = 15;
+const MAX_NOTIFICATIONS_PER_RUN = 10;
 
 /**
- * AI calls per run; the rest wait for the next run. With 7 sites, 2 LinkedIn
- * searches and 15 Telegram sends this keeps a run under the free plan's 50
- * outbound requests.
+ * Per-run caps (see SECONDARY_PER_RUN for the full request budget).
+ * Anything over a cap waits for the next run.
  */
-const AI_PER_RUN = 15;
+const AI_PER_RUN = 12;
+const DETAIL_PER_RUN = 5;
+
+/**
+ * Lower-volume sources take turns: this many per run, rotating, so the request
+ * budget stays fixed as the list grows. Budget per run: main sites (7) +
+ * rotating (6) + LinkedIn (2) + AI (12) + job pages (5) + second AI look (5)
+ * + Telegram sends (10) = 47 of the free plan's 50.
+ */
+const SECONDARY_PER_RUN = 6;
+const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
+  { name: "fuzu:latest", fetch: () => fetchFuzu(FUZU_PAGES.latest) },
+  { name: "psc", fetch: fetchPsc },
+  ...TELEGRAM_CHANNELS.map((c) => ({ name: `telegram:${c}`, fetch: () => fetchTelegram(c) })),
+  { name: "fuzu:it", fetch: () => fetchFuzu(FUZU_PAGES.it) },
+  { name: "icta", fetch: fetchIcta },
+  { name: "nakuru", fetch: fetchNakuru },
+  { name: "kiambu", fetch: () => fetchRss(KIAMBU_FEED) },
+  ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
+];
 
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
 export const DIGEST_CRON = "0 5 * * 1";
+/** Daily 07:00 Nairobi (04:00 UTC) round-up. Must match wrangler.jsonc. */
+export const DAILY_CRON = "0 4 * * *";
 
 export default {
   async scheduled(controller, env, ctx) {
     if (controller.cron === DIGEST_CRON) {
       ctx.waitUntil(
         sendWeeklyDigest(env, (html) => sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, html)),
+      );
+      return;
+    }
+    if (controller.cron === DAILY_CRON) {
+      ctx.waitUntil(
+        loadSettings(env).then(async (s) =>
+          sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, await buildDaily(env, s.minScore)),
+        ),
       );
       return;
     }
@@ -60,14 +93,34 @@ export default {
 
     const authorized = env.RUN_KEY && url.searchParams.get("key") === env.RUN_KEY;
 
-    // GET /run?key=<RUN_KEY> triggers a run by hand (LinkedIn included).
+    // GET /run?key=<RUN_KEY> triggers a run by hand with every LinkedIn search;
+    // add &linkedin=0 to skip LinkedIn (it rate-limits bursts).
     if (url.pathname === "/run" && authorized) {
-      return Response.json(await run(env, new Date(), true));
+      // &secondary=all fetches every rotating source this run.
+      return Response.json(
+        await run(env, new Date(), url.searchParams.get("linkedin") !== "0", url.searchParams.get("linkedin") === "0", url.searchParams.get("secondary") === "all"),
+      );
     }
 
     // GET /score-test?key=<RUN_KEY>&n=10 scores recent jobs without sending anything.
     if (url.pathname === "/score-test" && authorized) {
       const n = Math.min(10, Number(url.searchParams.get("n")) || 8);
+      // &id=<stored job id> scores it on the feed summary, then on the full job page.
+      const id = url.searchParams.get("id");
+      if (id) {
+        const row = await env.DB.prepare("SELECT id, source, title, company, url FROM seen_jobs WHERE id = ?")
+          .bind(id).first<Pick<Job, "id" | "source" | "title" | "url"> & { company: string | null }>();
+        if (!row) return Response.json({ error: "not found" }, { status: 404 });
+        const job: Job = { ...row, company: row.company ?? undefined };
+        const before = await scoreJob(env.AI, job);
+        if (!hasDetailPage(job)) return Response.json({ title: job.title, before, note: "no job page for this source" });
+        const d = await fetchDetails(job).catch((e) => ({ error: String(e) }) as const);
+        if ("error" in d) return Response.json({ title: job.title, before, error: d.error });
+        Object.assign(job, { details: d.text, deadline: d.deadline });
+        const after = job.details ? await scoreJob(env.AI, job, true) : null;
+        const closed = d.deadlineAt != null && d.deadlineAt < Date.now();
+        return Response.json({ title: job.title, before, after, deadline: d.deadline, closed, detailChars: d.text?.length ?? 0 });
+      }
       // &title=...&company=...&location=...&details=... scores one ad.
       const title = url.searchParams.get("title");
       if (title) {
@@ -112,7 +165,7 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function run(env: Env, now: Date, forceAll = false) {
+async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, allSecondary = false) {
   const settings = await loadSettings(env);
   const tasks: { name: string; fetch: () => Promise<Job[]> }[] = [];
 
@@ -128,12 +181,18 @@ async function run(env: Env, now: Date, forceAll = false) {
   tasks.push({ name: "untalent", fetch: fetchUnTalent });
   tasks.push({ name: "impactpool", fetch: fetchImpactpool });
 
+  const tenMin = Math.floor(now.getTime() / 600_000);
+  const take = allSecondary ? SECONDARY.length : Math.min(SECONDARY_PER_RUN, SECONDARY.length);
+  for (let i = 0; i < take; i++) {
+    tasks.push(SECONDARY[(tenMin * take + i) % SECONDARY.length]);
+  }
+
   // LinkedIn blocks bursts, so each run takes the next few searches from the
   // keyword list (rotating by 10-minute slot), a few seconds apart.
   // A manual /run fires all of them.
-  const liKeywords = splitList(env.LINKEDIN_KEYWORDS);
+  const liKeywords = skipLinkedIn ? [] : splitList(env.LINKEDIN_KEYWORDS);
   const perRun = Math.max(1, Number(env.LINKEDIN_PER_RUN) || 2);
-  const slot = Math.floor(now.getTime() / 600_000);
+  const slot = tenMin;
   const liDue = forceAll
     ? liKeywords
     : liKeywords.length
@@ -184,11 +243,12 @@ async function run(env: Env, now: Date, forceAll = false) {
     (j) => !seen.ids.has(j.id) && !(j.fingerprint && seen.fingerprints.has(j.fingerprint)),
   );
 
-  // First time a source returns results, record them silently instead of
-  // flooding Telegram with every job currently listed.
+  // First time a source returns results: with AI scoring on, its current jobs
+  // are scored like any others (only good matches are sent, so no flood). With
+  // AI off, they are recorded silently instead of alerting on every listing.
   const knownSources = await sourcesWithHistory(env.DB);
-  const seeding = unseen.filter((j) => !knownSources.has(j.source));
-  const candidates = unseen.filter((j) => knownSources.has(j.source));
+  const seeding = settings.aiScoring ? [] : unseen.filter((j) => !knownSources.has(j.source));
+  const candidates = unseen.filter((j) => !seeding.includes(j));
 
   const include = settings.include.map(keywordRegex);
   const exclude = settings.exclude.map(keywordRegex);
@@ -202,6 +262,7 @@ async function run(env: Env, now: Date, forceAll = false) {
   // AI scores each job against the CV. Jobs over the per-run or daily budget
   // wait for the next run (per-run) or fall back to keywords (daily).
   let deferred = 0;
+  let secondLooks = 0;
   if (settings.aiScoring && env.AI && open.length) {
     const budget = await aiBudgetLeft(env, now);
     if (budget > 0) {
@@ -217,12 +278,40 @@ async function run(env: Env, now: Date, forceAll = false) {
           errors.push(`ai: ${r.reason}`);
         }
       });
-      await recordAiUsage(env, now, batch.length);
+      // Second look for anything scoring 3+: the full job text (from the feed
+      // if it carried it, otherwise the job page) is scored again, and the
+      // page's closing date is checked. Clear no's (1-2) are not worth it.
+      // Highest first, so likely alerts are always checked.
+      const refine = batch
+        .filter((j) => j.score != null && j.score >= 3 && (j.details || hasDetailPage(j)))
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .slice(0, DETAIL_PER_RUN);
+      const refined = await Promise.allSettled(
+        refine.map(async (j) => {
+          if (!j.details) {
+            const d = await fetchDetails(j);
+            j.details = d.text;
+            j.deadline = d.deadline;
+            j.deadlineAt = d.deadlineAt;
+          }
+          if (!j.details) return;
+          const s = await scoreJob(env.AI, j, true);
+          j.score = s.score;
+          j.scoreReason = s.reason;
+        }),
+      );
+      refined.forEach((r) => r.status === "rejected" && errors.push(`details: ${r.reason}`));
+      secondLooks = refine.length;
+
+      await recordAiUsage(env, now, batch.length + refine.length);
     }
   }
 
   // Scored jobs need the minimum score; unscored ones use the keyword lists.
-  const isMatch = (j: Job) => (j.score != null ? j.score >= settings.minScore : matches(j, include, []));
+  // Jobs whose closing date has passed are never sent.
+  const isMatch = (j: Job) =>
+    !(j.deadlineAt && j.deadlineAt < now.getTime()) &&
+    (j.score != null ? j.score >= settings.minScore : matches(j, include, []));
   const matched = open.filter(isMatch);
   const unmatched = [...skipped, ...open.filter((j) => !isMatch(j))];
 
@@ -251,6 +340,8 @@ async function run(env: Env, now: Date, forceAll = false) {
     seeded: seeding.length,
     notified: sent.length,
     scored: open.filter((j) => j.score != null).length,
+    secondLooks,
+    closed: open.filter((j) => j.deadlineAt && j.deadlineAt < now.getTime()).length,
     pending: matched.length - sent.length + deferred,
     errors,
   };

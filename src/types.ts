@@ -9,6 +9,14 @@ export interface Job {
     | "corporatestaffing"
     | "untalent"
     | "impactpool"
+    | "telegram"
+    | "employer"
+    | "fuzu"
+    | "kenyajob"
+    | "psc"
+    | "icta"
+    | "nakuru"
+    | "kiambu"
     | "linkedin";
   title: string;
   company?: string;
@@ -20,6 +28,11 @@ export interface Job {
   /** Set when sent to Telegram: compact id for button callbacks, and send time. */
   shortKey?: string;
   notifiedAt?: number;
+  /** Full job text (feed body or job page), used for a second AI look. */
+  details?: string;
+  /** Application deadline from the job page, formatted for display. */
+  deadline?: string;
+  deadlineAt?: number;
   /** AI fit score 1-10 against the CV, with a one-line reason. */
   score?: number;
   scoreReason?: string;

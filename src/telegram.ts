@@ -11,6 +11,14 @@ export const SOURCE_LABELS: Record<Job["source"], string> = {
   corporatestaffing: "Corporate Staffing",
   untalent: "UNTalent",
   impactpool: "Impactpool",
+  telegram: "Telegram channel",
+  employer: "Company careers page",
+  fuzu: "Fuzu",
+  kenyajob: "Kenyajob",
+  psc: "Public Service Commission",
+  icta: "ICT Authority",
+  nakuru: "Nakuru County",
+  kiambu: "Kiambu County",
   linkedin: "LinkedIn",
 };
 
@@ -23,6 +31,7 @@ export function formatJob(job: Job): string {
   if (job.company) lines.push(`🏢 ${escape(job.company)}`);
   if (job.location) lines.push(`📍 ${escape(job.location)}`);
   if (job.posted) lines.push(`🕒 ${escape(job.posted)}`);
+  if (job.deadline) lines.push(`⏳ Closes ${escape(job.deadline)}`);
   if (job.description) lines.push("", escape(job.description.slice(0, 300)));
   lines.push("", `<a href="${escape(job.url)}">Open on ${label}</a>`);
   return lines.join("\n");

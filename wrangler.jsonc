@@ -7,8 +7,9 @@
   // Times are UTC; Nairobi is UTC+3.
   //  - every 10 min, 07:00-22:59 Nairobi
   //  - hourly during quiet hours, 23:00-06:00 Nairobi
-  //  - Mondays 08:00 Nairobi: weekly site report (keep in sync with DIGEST_CRON in src/index.ts)
-  "triggers": { "crons": ["*/10 4-19 * * *", "0 20-23,0-3 * * *", "0 5 * * 1"] },
+  //  - daily 07:00 Nairobi: round-up of the last 24 h (DAILY_CRON in src/index.ts)
+  //  - Mondays 08:00 Nairobi: weekly site report (DIGEST_CRON in src/index.ts)
+  "triggers": { "crons": ["*/10 4-19 * * *", "0 20-23,0-3 * * *", "0 4 * * *", "0 5 * * 1"] },
 
   // Workers AI (free allowance, no card) for scoring jobs against the CV.
   "ai": { "binding": "AI" },

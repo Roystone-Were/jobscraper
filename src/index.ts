@@ -13,7 +13,7 @@ import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
 // Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
 import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchIcta, fetchNakuru, fetchPsc } from "./sources/boards";
 import { fetchUnTalent } from "./sources/untalent";
-import { fetchLinkedIn } from "./sources/linkedin";
+import { fetchLinkedIn, queueLinkedIn, readLinkedInInbox } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
 import { fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
 import { formatJob, jobKeyboard, sendTelegram, tg } from "./telegram";
@@ -91,6 +91,22 @@ export default {
         console.error("telegram update failed", e);
       }
       return new Response("ok");
+    }
+
+    // LinkedIn blocks Cloudflare's IPs, so a PC fetches the searches (pc/linkedin-push.ps1).
+    // GET returns the searches to run; POST &keyword=... sends one results page as HTML.
+    if (url.pathname === "/linkedin") {
+      if (!env.LINKEDIN_PUSH_KEY || url.searchParams.get("key") !== env.LINKEDIN_PUSH_KEY) {
+        return new Response("forbidden", { status: 403 });
+      }
+      if (request.method === "POST") {
+        const now = Date.now();
+        const keyword = url.searchParams.get("keyword") ?? "";
+        const parsed = await queueLinkedIn(env.DB, await request.text(), now);
+        await recordHealth(env.DB, now, [{ source: "linkedin", jobs: parsed }]);
+        return Response.json({ keyword, parsed });
+      }
+      return Response.json({ keywords: splitList(env.LINKEDIN_KEYWORDS), location: env.LINKEDIN_LOCATION });
     }
 
     const authorized = env.RUN_KEY && url.searchParams.get("key") === env.RUN_KEY;
@@ -194,9 +210,10 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
 
   // LinkedIn blocks bursts, so each run takes the next few searches from the
   // keyword list (rotating by 10-minute slot), a few seconds apart.
-  // A manual /run fires all of them.
-  const liKeywords = skipLinkedIn ? [] : splitList(env.LINKEDIN_KEYWORDS);
-  const perRun = Math.max(1, Number(env.LINKEDIN_PER_RUN) || 2);
+  // A manual /run fires all of them. LINKEDIN_PER_RUN=0 turns this off when a
+  // PC pushes LinkedIn results instead (read from the inbox below).
+  const perRun = Math.max(0, Number(env.LINKEDIN_PER_RUN ?? 2) || 0);
+  const liKeywords = skipLinkedIn || perRun === 0 ? [] : splitList(env.LINKEDIN_KEYWORDS);
   const slot = tenMin;
   const liDue = forceAll
     ? liKeywords
@@ -223,6 +240,14 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
     }
     for (const job of r.value) byId.set(job.id, job);
   });
+  // Pushed from the PC; health was recorded when it arrived.
+  if (!skipLinkedIn) {
+    try {
+      for (const job of await readLinkedInInbox(env.DB, now.getTime())) if (!byId.has(job.id)) byId.set(job.id, job);
+    } catch (e) {
+      errors.push(`linkedin:inbox: ${e}`);
+    }
+  }
   errors.forEach((e) => console.warn(e));
   await recordHealth(
     env.DB,

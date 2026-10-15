@@ -1,0 +1,4 @@
+{
+  "worker": "https://job-scraper.<subdomain>.workers.dev",
+  "key": "<LINKEDIN_PUSH_KEY>"
+}

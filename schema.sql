@@ -25,3 +25,12 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- LinkedIn jobs pushed from a PC (POST /linkedin, see pc/README.md). LinkedIn
+-- blocks Cloudflare's IPs, so a PC fetches the search pages and the Worker
+-- parses them here. Each run reads this like a feed; rows go once seen.
+CREATE TABLE IF NOT EXISTS linkedin_inbox (
+  id    TEXT PRIMARY KEY,   -- same as seen_jobs.id
+  job   TEXT NOT NULL,      -- Job as JSON
+  added INTEGER NOT NULL    -- unix ms
+);

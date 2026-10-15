@@ -7,3 +7,7 @@ src/profile.ts
 
 # Local copies of Cloudflare secrets (never commit)
 .secrets/
+
+# PC LinkedIn pusher: holds the push key; local log
+pc/linkedin-push.config.json
+pc/linkedin-push.log

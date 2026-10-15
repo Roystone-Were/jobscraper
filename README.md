@@ -8,11 +8,12 @@ Checks Kenyan job sources and sends good matches to Telegram. Runs free on Cloud
   Nakuru and Kiambu county boards, Telegram channels (`src/sources/telegram.ts`), and 15 employers'
   careers boards via their public ATS APIs (`src/sources/employers.ts`, Kenya-located jobs only),
   and eTalent-hosted boards such as People Foco Agency (`ETALENT_BOARDS` in `src/sources/boards.ts`).
-- **LinkedIn:** 2 rotating searches per run.
+- **LinkedIn:** fetched by a PC on a Task Scheduler timer and pushed to the Worker (LinkedIn blocks
+  Cloudflare's IPs). See [`pc/README.md`](pc/README.md).
 - Runs every 10 minutes (hourly 11 pm–7 am Nairobi). Kenyajob.com is parsed but disabled: it returns 403 to Cloudflare.
 
 ```
-Cron (every 10 min; hourly at night) → job sites + LinkedIn → merge duplicates → AI score vs CV → D1 "seen" table → Telegram
+Cron (every 10 min; hourly at night) → job sites + LinkedIn inbox (pushed from a PC) → merge duplicates → AI score vs CV → D1 "seen" table → Telegram
 ```
 
 ## One-time setup
@@ -55,9 +56,9 @@ Edit `vars` in `wrangler.jsonc` (all comma-separated):
 | `INCLUDE_KEYWORDS` | `IT, software, network` | Notify only if the job title contains one (whole word; short ALL-CAPS like `IT` are case-sensitive). Empty = all jobs. Not applied to LinkedIn. |
 | `EXCLUDE_KEYWORDS` | `senior, intern` | Skip if the title contains any. |
 | `MYJOBMAG_QUERIES` | `software developer` | Optional extra MyJobMag searches. The latest 100 jobs always come from MyJobMag's feed. |
-| `LINKEDIN_KEYWORDS` | `software engineer, backend` | LinkedIn searches. Empty = LinkedIn off. |
+| `LINKEDIN_KEYWORDS` | `software engineer, backend` | LinkedIn searches; the PC script runs them all. |
 | `LINKEDIN_LOCATION` | `Kenya` / `Nairobi` / `Remote` | LinkedIn location filter. |
-| `LINKEDIN_PER_RUN` | `2` | LinkedIn searches per run, rotating through the list. |
+| `LINKEDIN_PER_RUN` | `0` | LinkedIn searches the Worker makes itself per run (rotating). `0` = leave it to the PC. |
 
 Keep searches to ~10 total — the free plan allows 50 outbound requests per run.
 
@@ -76,8 +77,10 @@ From then on, only new postings are sent.
 Watch live logs: `npm run logs`
 
 ## Notes
-- **LinkedIn** is used logged-out via its public job search. It rate-limits hard (HTTP 429);
-  when that happens the run logs a warning and tries again next time. MyJobMag is unaffected.
+- **LinkedIn** is used logged-out via its public job search. It answers Cloudflare's IPs with
+  HTTP 429, so `pc/linkedin-push.ps1` fetches the searches from a PC and POSTs the pages to
+  `/linkedin`; each run reads them from the `linkedin_inbox` table. Upgrading an older database:
+  `npx wrangler d1 execute job-scraper --remote --file=migrations/005_linkedin_inbox.sql`
 - After changing `wrangler.jsonc`, run `npm run deploy` again.
 - Reset history: `npx wrangler d1 execute job-scraper --remote --command "DELETE FROM seen_jobs"`
 

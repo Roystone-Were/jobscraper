@@ -51,6 +51,8 @@ export interface Env {
   RUN_KEY?: string;
   /** Telegram sends this in a header so /telegram only accepts real updates. */
   TELEGRAM_WEBHOOK_SECRET: string;
+  /** Secret the PC sends with POST /linkedin (pc/linkedin-push.ps1). Unset = endpoint off. */
+  LINKEDIN_PUSH_KEY?: string;
 
   INCLUDE_KEYWORDS: string;
   EXCLUDE_KEYWORDS: string;

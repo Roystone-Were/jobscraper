@@ -32,11 +32,12 @@
     // Optional extra MyJobMag searches. The latest 100 jobs always come from its feed.
     "MYJOBMAG_QUERIES": "",
 
-    // Comma-separated LinkedIn searches, run one at a time in rotation. Empty = LinkedIn off.
+    // Comma-separated LinkedIn searches. The PC script (pc/linkedin-push.ps1) runs them all.
     "LINKEDIN_KEYWORDS": "software developer, IT support, network engineer, network administrator, network technician, systems administrator, cyber security",
     "LINKEDIN_LOCATION": "Kenya",
-    // LinkedIn searches per run (rotating, 4 s apart). Higher = more likely to get blocked.
-    "LINKEDIN_PER_RUN": "2",
+    // LinkedIn searches the Worker itself makes per run (rotating, 4 s apart). 0 = none:
+    // LinkedIn answers Cloudflare's IPs with 429, so a PC pushes results to /linkedin instead.
+    "LINKEDIN_PER_RUN": "0",
 
     // AI scoring against the CV (src/profile.ts). Telegram: /ai on|off, /minscore N.
     "AI_SCORING": "on",

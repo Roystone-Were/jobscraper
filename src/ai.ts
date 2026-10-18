@@ -24,6 +24,7 @@ Scoring (integer 1-10):
 - 5-6: related IT role that is a stretch (e.g. mostly software development, data, or a level above).
 - 3-4: weak link to the candidate's skills.
 - 1-2: unrelated field, senior/manager level, or on-site outside Kenya.
+If a large part of the duties is work the candidate is not looking for (e.g. half the duties), score at most 5, even when the rest fits.
 Job ads may be short; judge mainly from the title, company and any details given. Do not invent requirements.
 If one ad lists several vacancies, score the best-matching one and name it in the reason.
 Reason: one short sentence (max 20 words) saying why, written to the candidate ("you").

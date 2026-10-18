@@ -304,6 +304,8 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
         if (r.status === "fulfilled") {
           batch[i].score = r.value.score;
           batch[i].scoreReason = r.value.reason;
+          batch[i].strengths = r.value.strengths;
+          batch[i].gaps = r.value.gaps;
           batch[i].salary ??= verifiedAiSalary(r.value.salary, `${batch[i].title} ${batch[i].description ?? ""}`);
           batch[i].payEstimate = r.value.estimate;
         } else {
@@ -331,6 +333,8 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
           const s = await scoreJob(env.AI, j, true);
           j.score = s.score;
           j.scoreReason = s.reason;
+          j.strengths = s.strengths;
+          j.gaps = s.gaps;
           j.salary ??= verifiedAiSalary(s.salary, `${j.title} ${j.details}`);
           j.payEstimate = s.estimate ?? j.payEstimate;
         }),

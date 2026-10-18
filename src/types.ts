@@ -41,6 +41,9 @@ export interface Job {
   /** AI fit score 1-10 against the CV, with a one-line reason. */
   score?: number;
   scoreReason?: string;
+  /** From the AI: what in the ad matches the CV, and what the CV lacks. */
+  strengths?: string[];
+  gaps?: string[];
   url: string;
 }
 

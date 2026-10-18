@@ -29,6 +29,8 @@ export function formatJob(job: Job): string {
   if (job.score != null) {
     lines.push(`🎯 <b>${job.score}/10</b>${job.scoreReason ? ` · <i>${escape(job.scoreReason)}</i>` : ""}`);
   }
+  if (job.strengths?.length) lines.push(`✅ ${escape(job.strengths.join(" · "))}`);
+  if (job.gaps?.length) lines.push(`⚠️ ${escape(job.gaps.join(" · "))}`);
   if (job.company) lines.push(`🏢 ${escape(job.company)}`);
   if (job.location) lines.push(`📍 ${escape(job.location)}`);
   if (job.posted) lines.push(`🕒 ${escape(job.posted)}`);

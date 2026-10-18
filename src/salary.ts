@@ -3,7 +3,8 @@
  * - "advertised": stated in the ad (structured field or the ad text)
  * - "CSG n civil service scale": looked up from the official SRC table
  * - "UNTalent estimate": UNTalent's own figure for UN posts
- * Nothing here guesses private-sector pay.
+ * - "AI estimate": the scoring model's market guess, used only when none of
+ *   the above is available, and marked "≈" so it never passes for an offer.
  */
 
 /**
@@ -35,6 +36,22 @@ const n = (x: number) => Math.round(x).toLocaleString("en-US");
 export function kesRange(min?: number, max?: number): string | undefined {
   if (!min && !max) return undefined;
   return min && max && max !== min ? `KES ${n(min)}–${n(max)}` : `KES ${n((min || max)!)}`;
+}
+
+const CONFIDENCE = ["low", "medium", "high"] as const;
+export type Confidence = (typeof CONFIDENCE)[number];
+
+/**
+ * The AI's monthly KES range, if plausible (0 means it declined to guess).
+ * Its confidence is capped at `cap`, which the caller sets from how much the
+ * ad says (no employer named → low).
+ */
+export function salaryEstimate(min: number, max: number, confidence: unknown, cap: Confidence = "high"): string | undefined {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
+  if (min < 10_000 || max < min || max > 1_000_000 || max > min * 4) return undefined;
+  const r5k = (x: number) => Math.round(x / 5_000) * 5_000;
+  const level = Math.min(Math.max(0, CONFIDENCE.indexOf(confidence as Confidence)), CONFIDENCE.indexOf(cap));
+  return `≈ ${kesRange(r5k(min), r5k(max))}/month gross · AI estimate, ${CONFIDENCE[level]} confidence`;
 }
 
 /** "CSG 8" anywhere in the ad → the official basic-pay band. */

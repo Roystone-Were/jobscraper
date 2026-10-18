@@ -305,6 +305,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
           batch[i].score = r.value.score;
           batch[i].scoreReason = r.value.reason;
           batch[i].salary ??= verifiedAiSalary(r.value.salary, `${batch[i].title} ${batch[i].description ?? ""}`);
+          batch[i].payEstimate = r.value.estimate;
         } else {
           errors.push(`ai: ${r.reason}`);
         }
@@ -331,6 +332,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
           j.score = s.score;
           j.scoreReason = s.reason;
           j.salary ??= verifiedAiSalary(s.salary, `${j.title} ${j.details}`);
+          j.payEstimate = s.estimate ?? j.payEstimate;
         }),
       );
       refined.forEach((r) => r.status === "rejected" && errors.push(`details: ${r.reason}`));
@@ -348,8 +350,11 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   const matched = open.filter(isMatch);
   const unmatched = [...skipped, ...open.filter((j) => !isMatch(j))];
 
-  // Government ads quoting a CSG grade get the official pay band.
-  for (const j of open) j.salary ??= salaryFromCsg(`${j.title} ${j.description ?? ""} ${j.details ?? ""}`);
+  // Government ads quoting a CSG grade get the official pay band; anything
+  // still without pay falls back to the AI's market estimate.
+  for (const j of open) {
+    j.salary ??= salaryFromCsg(`${j.title} ${j.description ?? ""} ${j.details ?? ""}`) ?? j.payEstimate;
+  }
 
   const toSend = matched.slice(0, MAX_NOTIFICATIONS_PER_RUN);
   const sent: Job[] = [];

@@ -36,6 +36,8 @@ export interface Job {
   deadlineAt?: number;
   /** Pay with its basis, e.g. "KES 46,120–65,860/month (advertised)". See src/salary.ts. */
   salary?: string;
+  /** AI market pay estimate; becomes `salary` only if nothing better is found. */
+  payEstimate?: string;
   /** AI fit score 1-10 against the CV, with a one-line reason. */
   score?: number;
   scoreReason?: string;

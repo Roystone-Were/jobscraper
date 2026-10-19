@@ -88,6 +88,8 @@ export function splitList(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
     .map((s) => s.trim())
+  /** Approved ReliefWeb API appname. Unset = ReliefWeb sources fail and show in health. */
+  RELIEFWEB_APPNAME?: string;
     .filter(Boolean);
 }
 

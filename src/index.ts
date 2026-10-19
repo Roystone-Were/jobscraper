@@ -12,7 +12,7 @@ import { EMPLOYERS, fetchEmployer } from "./sources/employers";
 import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
 // Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
 import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchGaa, fetchIcta, fetchJkuat, fetchMeru, fetchNakuru, fetchNyamira, fetchPsc } from "./sources/boards";
-import { fetchReliefWeb } from "./sources/reliefweb";
+import { fetchReliefWeb, RELIEFWEB_FILTERS } from "./sources/reliefweb";
 import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn, queueLinkedIn, readLinkedInInbox } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
@@ -47,7 +47,7 @@ const PDF_PER_RUN = 2;
  * + Telegram sends (10) = 47 of the free plan's 50.
  */
 const SECONDARY_PER_RUN = 6;
-const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
+const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
   { name: "fuzu:latest", fetch: () => fetchFuzu(FUZU_PAGES.latest) },
   { name: "psc", fetch: fetchPsc },
   ...TELEGRAM_CHANNELS.map((c) => ({ name: `telegram:${c}`, fetch: () => fetchTelegram(c) })),
@@ -55,7 +55,6 @@ const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
   { name: "icta", fetch: fetchIcta },
   { name: "nakuru", fetch: fetchNakuru },
   { name: "kiambu", fetch: () => fetchRss(KIAMBU_FEED) },
-  { name: "reliefweb", fetch: fetchReliefWeb },
   { name: "gaa", fetch: fetchGaa },
   { name: "nyamira", fetch: fetchNyamira },
   { name: "meru", fetch: fetchMeru },
@@ -66,6 +65,8 @@ const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
 ];
 
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
+  { name: "reliefweb:ict", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.ict) },
+  { name: "reliefweb:agriculture", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.agriculture) },
 export const DIGEST_CRON = "0 5 * * 1";
 /** Daily 07:00 Nairobi (04:00 UTC) round-up. Must match wrangler.jsonc. */
 export const DAILY_CRON = "0 4 * * *";
@@ -215,10 +216,13 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
 
   const tenMin = Math.floor(now.getTime() / 600_000);
   if (secondary && secondary !== "all") {
-    tasks.push(...SECONDARY.filter((s) => s.name === secondary));
+    for (const s of SECONDARY.filter((s) => s.name === secondary)) tasks.push({ name: s.name, fetch: () => s.fetch(env) });
   } else {
     const take = secondary === "all" ? SECONDARY.length : Math.min(SECONDARY_PER_RUN, SECONDARY.length);
-    for (let i = 0; i < take; i++) tasks.push(SECONDARY[(tenMin * take + i) % SECONDARY.length]);
+    for (let i = 0; i < take; i++) {
+      const s = SECONDARY[(tenMin * take + i) % SECONDARY.length];
+      tasks.push({ name: s.name, fetch: () => s.fetch(env) });
+    }
   }
 
   // LinkedIn blocks bursts, so each run takes the next few searches from the

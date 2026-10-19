@@ -1,45 +1,75 @@
-import { htmlToText } from "../details";
-import { cleanText, decodeEntities, formatNairobi, type Job, USER_AGENT } from "../types";
+import { cleanText, formatNairobi, type Job, USER_AGENT } from "../types";
 
-// NGO and UN jobs in Kenya (C131) under Information and Communications
-// Technology (CC6866). The JSON API needs an approved appname; the RSS doesn't.
-const URL = "https://reliefweb.int/jobs/rss.xml?advanced-search=%28C131%29_%28CC6866%29";
+// NGO and UN jobs in Kenya (country 131) via the JSON API, which needs an
+// approved appname (RELIEFWEB_APPNAME). The RSS answers Cloudflare's IPs with a
+// bot challenge (HTTP 202, empty body); the API doesn't.
+const API = "https://api.reliefweb.int/v2/jobs";
 
-export async function fetchReliefWeb(): Promise<Job[]> {
-  const res = await fetch(URL, { headers: { "User-Agent": USER_AGENT } });
-  if (!res.ok) throw new Error(`ReliefWeb -> HTTP ${res.status}`);
-  return parseReliefWeb(await res.text());
+export const RELIEFWEB_FILTERS = {
+  // Career category Information and Communications Technology.
+  ict: { field: "career_categories.id", value: 6866 },
+  // Theme Agriculture: fisheries and aquaculture projects (EXTRA_PROFILES) land here.
+  agriculture: { field: "theme.id", value: 4587 },
+};
+
+interface ReliefWebJob {
+  id: string;
+  fields: {
+    title?: string;
+    body?: string;
+    url_alias?: string;
+    url?: string;
+    source?: { name?: string }[];
+    city?: { name?: string }[];
+    date?: { created?: string; closing?: string };
+  };
 }
 
-export function parseReliefWeb(xml: string): Job[] {
-  const jobs: Job[] = [];
-  for (const item of xml.split("<item>").slice(1)) {
-    const tag = (name: string) => item.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1];
-    const title = tag("title");
-    const link = tag("link")?.trim();
-    const id = link?.match(/\/job\/(\d+)/)?.[1];
-    if (!title || !link || !id) continue;
+export async function fetchReliefWeb(appname: string | undefined, filter: { field: string; value: number }): Promise<Job[]> {
+  if (!appname) throw new Error("ReliefWeb -> RELIEFWEB_APPNAME not set");
+  const res = await fetch(`${API}?appname=${encodeURIComponent(appname)}`, {
+    method: "POST",
+    headers: { "User-Agent": USER_AGENT, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      limit: 30,
+      sort: ["date.created:desc"],
+      fields: { include: ["title", "body", "url", "url_alias", "source.name", "city.name", "date.created", "date.closing"] },
+      filter: { operator: "AND", conditions: [{ field: "country.id", value: 131 }, filter] },
+    }),
+  });
+  if (!res.ok) throw new Error(`ReliefWeb -> HTTP ${res.status}`);
+  return parseReliefWeb((await res.json()) as { data?: ReliefWebJob[] });
+}
 
-    // The body is escaped HTML that starts with country/org/closing-date tags.
-    const body = decodeEntities(tag("description") ?? "");
-    const org = body.match(/<div class="tag source">Organization:\s*([\s\S]*?)<\/div>/);
-    const closes = body.match(/Closing date:\s*([^<]+)</)?.[1].trim();
-    const at = closes ? Date.parse(`${closes} 20:59 UTC`) : NaN;
-    const text = htmlToText(body.replace(/<div class="(tag|date)[^"]*">[\s\S]*?<\/div>/g, " "));
-    const pubDate = tag("pubDate");
+export function parseReliefWeb(json: { data?: ReliefWebJob[] }): Job[] {
+  const jobs: Job[] = [];
+  for (const { id, fields: f } of json.data ?? []) {
+    const url = f.url_alias ?? f.url;
+    if (!f.title || !url) continue;
+
+    // The body is Markdown.
+    const text = (f.body ?? "")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[#*_`>]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    // Closing dates are midnight UTC of the day; treat them as 23:59 Nairobi.
+    const closes = f.date?.closing?.slice(0, 10);
+    const at = closes ? Date.parse(`${closes}T20:59:00Z`) : NaN;
+    const city = f.city?.[0]?.name;
 
     jobs.push({
       id: `reliefweb:${id}`,
       source: "reliefweb",
-      title: cleanText(title),
-      company: org ? cleanText(org[1]) : undefined,
-      location: "Kenya",
+      title: cleanText(f.title),
+      company: f.source?.[0]?.name ? cleanText(f.source[0].name) : undefined,
+      location: city ? `${city}, Kenya` : "Kenya",
       description: text.slice(0, 1200) || undefined,
       details: text.slice(0, 3000) || undefined,
-      posted: pubDate ? formatNairobi(new Date(pubDate)) : undefined,
+      posted: f.date?.created ? formatNairobi(new Date(f.date.created)) : undefined,
       deadline: closes,
       deadlineAt: Number.isNaN(at) ? undefined : at,
-      url: link,
+      url,
     });
   }
   return jobs;

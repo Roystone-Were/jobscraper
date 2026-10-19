@@ -5,14 +5,15 @@ Checks Kenyan job sources and sends good matches to Telegram. Runs free on Cloud
 - **Every run:** MyJobMag Kenya, BrighterMonday, JobWebKenya, Opportunities for Young Kenyans,
   Corporate Staffing, UNTalent (UN IT & Telecom, Kenya), Impactpool.
 - **Rotating, 6 per run:** Fuzu (latest + IT category), Public Service Commission, ICT Authority,
-  Government Advertising Agency (national government adverts), ReliefWeb (NGO/UN ICT jobs in Kenya),
-  JKUAT, Nakuru, Kiambu, Nyamira, Meru, Nyeri and Kisumu county boards, Telegram channels
+  Government Advertising Agency (national government adverts; PDF adverts are read before scoring), JKUAT, Nakuru, Kiambu, Nyamira, Meru, Nyeri and Kisumu county boards, Telegram channels
   (`src/sources/telegram.ts`), and 18 employers'
   careers boards via their public ATS APIs (`src/sources/employers.ts`, Kenya-located jobs only),
   and eTalent-hosted boards such as People Foco Agency (`ETALENT_BOARDS` in `src/sources/boards.ts`).
 - **LinkedIn:** fetched by a PC on a Task Scheduler timer and pushed to the Worker (LinkedIn blocks
   Cloudflare's IPs). See [`pc/README.md`](pc/README.md).
-- Runs every 10 minutes (hourly 11 pm–7 am Nairobi). Kenyajob.com is parsed but disabled: it returns 403 to Cloudflare.
+- Runs every 10 minutes (hourly 11 pm–7 am Nairobi). Kenyajob.com is parsed but disabled:
+  it returns 403 to Cloudflare. ReliefWeb uses its JSON API (secret `RELIEFWEB_APPNAME`),
+  since its RSS gives Cloudflare a bot challenge (HTTP 202, empty body).
 
 ```
 Cron (every 10 min; hourly at night) → job sites + LinkedIn inbox (pushed from a PC) → merge duplicates → AI score vs CV → D1 "seen" table → Telegram

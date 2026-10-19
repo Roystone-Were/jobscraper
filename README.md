@@ -100,6 +100,18 @@ by Workers AI (`@cf/google/gemma-4-26b-a4b-it`, free allowance, no card). Jobs a
 - Calibrate: `/score-test?key=<RUN_KEY>&title=Network%20Engineer&company=Safaricom` (or `&source=linkedin&n=10` to score stored jobs).
 - Upgrading an older database: `npx wrangler d1 execute job-scraper --remote --file=migrations/003_ai_score.sql`
 
+### Alerts for someone else
+`EXTRA_PROFILES` in `src/profile.ts` adds other people (e.g. a friend in another field). Their
+matches arrive in the same chat, headed by their label, with an "Open job" button only. Each has
+their own CV summary, score bands, pay ranges and keywords (`ExtraProfile` in `src/types.ts`).
+
+- Only jobs whose title, employer or summary mention one of their keywords are scored for them,
+  up to 3 per run (`EXTRA_AI_PER_RUN` in `src/extra.ts`), so the request budget barely moves.
+- Each job is scored once per person (`profile_alerts` table), including copies on other boards.
+  Jobs from the last 14 days are checked too, so a new profile isn't limited to future postings.
+- Their alerts are sent first in a run (at most 5); the daily round-up and `/` commands stay yours.
+- Upgrading an older database: `npx wrangler d1 execute job-scraper --remote --file=migrations/006_profile_alerts.sql`
+
 ## Second look & closing dates
 Jobs scoring 3+ get a second AI look on the full job text: from the feed when it carries it
 (JobWebKenya, Opportunities for Young Kenyans, Fuzu, Telegram) or from the job page (schema.org

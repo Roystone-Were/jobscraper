@@ -51,7 +51,30 @@ export interface Job {
   /** From the AI: what in the ad matches the CV, and what the CV lacks. */
   strengths?: string[];
   gaps?: string[];
+  /** Full text of a PDF advert, kept for the run so each profile can take its own excerpt. */
+  pdfText?: string;
   url: string;
+}
+
+/**
+ * Someone else whose matches go to the same Telegram chat, labelled. Lives in
+ * the git-ignored src/profile.ts (EXTRA_PROFILES), like the main PROFILE.
+ */
+export interface ExtraProfile {
+  /** Short id stored with their results, e.g. "sam". Don't change it later. */
+  key: string;
+  /** First line of their alerts, e.g. "🌱 For Sam". */
+  label: string;
+  /** CV summary, written like PROFILE. */
+  profile: string;
+  /** Score bands for their field (lines "- 9-10: ..." down to "- 1-2: ..."). */
+  scoring: string;
+  /** Kenyan monthly pay ranges for their field, one "- role: min-max" per line. */
+  pay: string;
+  /** Whole words; only jobs whose title, employer or summary mention one are scored for them. */
+  keywords: string[];
+  /** Alert threshold; defaults to the main /minscore. */
+  minScore?: number;
 }
 
 export interface Env {
@@ -65,6 +88,8 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
   /** Secret the PC sends with POST /linkedin (pc/linkedin-push.ps1). Unset = endpoint off. */
   LINKEDIN_PUSH_KEY?: string;
+  /** Approved ReliefWeb API appname. Unset = ReliefWeb sources fail and show in health. */
+  RELIEFWEB_APPNAME?: string;
 
   INCLUDE_KEYWORDS: string;
   EXCLUDE_KEYWORDS: string;
@@ -88,8 +113,6 @@ export function splitList(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
     .map((s) => s.trim())
-  /** Approved ReliefWeb API appname. Unset = ReliefWeb sources fail and show in health. */
-  RELIEFWEB_APPNAME?: string;
     .filter(Boolean);
 }
 

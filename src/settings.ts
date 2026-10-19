@@ -1,5 +1,15 @@
 import { type Env, splitList } from "./types";
 
+/**
+ * Whole-word match. Short all-caps keywords ("IT", "ICT") are case-sensitive
+ * so "IT Officer" matches but "apply for it" does not.
+ */
+export function keywordRegex(keyword: string): RegExp {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const caseSensitive = keyword.length <= 3 && keyword === keyword.toUpperCase();
+  return new RegExp(`(^|[^A-Za-z0-9])${escaped}($|[^A-Za-z0-9])`, caseSensitive ? "" : "i");
+}
+
 export interface Settings {
   include: string[];
   exclude: string[];

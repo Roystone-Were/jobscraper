@@ -52,6 +52,9 @@ type Button = { text: string; callback_data?: string; url?: string };
 export type Keyboard = { inline_keyboard: Button[][] };
 
 /** Buttons under each alert. `key` is the job's short_key. */
+/** Just the link: alerts for EXTRA_PROFILES have no Save/Hide (those act on your list). */
+export const openKeyboard = (url: string): Keyboard => ({ inline_keyboard: [[{ text: "Open job ↗", url }]] });
+
 export function jobKeyboard(key: string, url: string, saved = false): Keyboard {
   return {
     inline_keyboard: [

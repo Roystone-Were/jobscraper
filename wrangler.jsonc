@@ -32,8 +32,10 @@
     // Optional extra MyJobMag searches. The latest 100 jobs always come from its feed.
     "MYJOBMAG_QUERIES": "",
 
-    // Comma-separated LinkedIn searches. The PC script (pc/linkedin-push.ps1) runs them all.
-    "LINKEDIN_KEYWORDS": "software developer, IT support, network engineer, network administrator, network technician, systems administrator, cyber security",
+    // Comma-separated LinkedIn searches. The PC script (pc/linkedin-push.ps1) runs them all,
+    // in order, and stops at the first block (HTTP 429), so the last ones are the first to drop.
+    // "aquaculture" and "fisheries" are for an extra profile (EXTRA_PROFILES in src/profile.ts).
+    "LINKEDIN_KEYWORDS": "software developer, IT support, network engineer, network administrator, network technician, systems administrator, cyber security, aquaculture, fisheries",
     "LINKEDIN_LOCATION": "Kenya",
     // LinkedIn searches the Worker itself makes per run (rotating, 4 s apart). 0 = none:
     // LinkedIn answers Cloudflare's IPs with 429, so a PC pushes results to /linkedin instead.

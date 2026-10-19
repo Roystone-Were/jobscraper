@@ -2,9 +2,9 @@ import { scoreJob } from "./ai";
 import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
 import { fetchDetails, fetchPdfText, hasDetailPage, isPdfAdvert, pdfExcerpt } from "./details";
-import { salaryFromCsg, verifiedAiSalary } from "./salary";
+import { csgBand, verifiedAiSalary } from "./salary";
 import { buildDaily, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
-import { getSetting, loadSettings, setSetting } from "./settings";
+import { getSetting, keywordRegex, loadSettings, setSetting } from "./settings";
 import { fetchBrighterMonday } from "./sources/brightermonday";
 import { fetchCorporateStaffing } from "./sources/corporatestaffing";
 import { fetchImpactpool } from "./sources/impactpool";
@@ -17,7 +17,9 @@ import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn, queueLinkedIn, readLinkedInInbox } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
 import { COUNTY_FEEDS, fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
-import { formatJob, jobKeyboard, sendTelegram, tg } from "./telegram";
+import { markAlertSent, pendingAlerts, scoreExtraProfiles } from "./extra";
+import { EXTRA_PROFILES } from "./profile";
+import { formatJob, jobKeyboard, openKeyboard, sendTelegram, tg } from "./telegram";
 import { type Env, type Job, splitList } from "./types";
 
 /**
@@ -39,12 +41,16 @@ const DETAIL_PER_RUN = 5;
  * second looks plus PDFs stay within the 10 requests budgeted for them.
  */
 const PDF_PER_RUN = 2;
+/** Alerts for EXTRA_PROFILES per run, sent first and counted in MAX_NOTIFICATIONS_PER_RUN. */
+const EXTRA_SENDS_PER_RUN = 5;
 
 /**
  * Lower-volume sources take turns: this many per run, rotating, so the request
  * budget stays fixed as the list grows. Budget per run: main sites (7) +
  * rotating (6) + LinkedIn (2) + AI (12) + job pages (5) + second AI look (5)
- * + Telegram sends (10) = 47 of the free plan's 50.
+ * + other profiles' AI (EXTRA_AI_PER_RUN, 3) + Telegram sends (10) = 50 of
+ * the free plan's 50. LinkedIn is pushed from a PC (LINKEDIN_PER_RUN=0), so
+ * in practice it is 48.
  */
 const SECONDARY_PER_RUN = 6;
 const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
@@ -59,14 +65,14 @@ const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
   { name: "nyamira", fetch: fetchNyamira },
   { name: "meru", fetch: fetchMeru },
   { name: "jkuat", fetch: fetchJkuat },
+  { name: "reliefweb:ict", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.ict) },
+  { name: "reliefweb:agriculture", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.agriculture) },
   ...COUNTY_FEEDS.map((f) => ({ name: f.source, fetch: () => fetchRss(f) })),
   ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
   ...ETALENT_BOARDS.map((b) => ({ name: `etalent:${b.slug}`, fetch: () => fetchEtalent(b) })),
 ];
 
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
-  { name: "reliefweb:ict", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.ict) },
-  { name: "reliefweb:agriculture", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.agriculture) },
 export const DIGEST_CRON = "0 5 * * 1";
 /** Daily 07:00 Nairobi (04:00 UTC) round-up. Must match wrangler.jsonc. */
 export const DAILY_CRON = "0 4 * * *";
@@ -324,7 +330,8 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
       const pdfs = batch.filter(isPdfAdvert);
       const read = await Promise.allSettled(
         pdfs.map(async (j) => {
-          j.details = pdfExcerpt(await fetchPdfText(env.AI, j), include);
+          j.pdfText = await fetchPdfText(env.AI, j);
+          j.details = pdfExcerpt(j.pdfText, include);
         }),
       );
       read.forEach((r) => r.status === "rejected" && errors.push(`pdf: ${r.reason}`));
@@ -376,6 +383,20 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
     }
   }
 
+  // Other people's matches (EXTRA_PROFILES). Runs before the pay estimate
+  // below fills `salary`, so they only inherit pay the ad states. A failure
+  // here must not stop the main alerts.
+  let extraScored = 0;
+  if (EXTRA_PROFILES.length && settings.aiScoring && env.AI && !settings.paused) {
+    try {
+      const aiLeft = await aiBudgetLeft(env, now);
+      extraScored = await scoreExtraProfiles(env.DB, env.AI, unseen, settings.minScore, now.getTime(), aiLeft, errors);
+      if (extraScored) await recordAiUsage(env, now, extraScored);
+    } catch (e) {
+      errors.push(`extra profiles: ${e}`);
+    }
+  }
+
   // Scored jobs need the minimum score; unscored ones use the keyword lists.
   // Jobs whose closing date has passed are never sent.
   const isMatch = (j: Job) =>
@@ -385,16 +406,27 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   const unmatched = [...skipped, ...open.filter((j) => !isMatch(j))];
 
   // Government ads quoting a CSG grade get the official pay band; anything
-  // still without pay falls back to the AI's market estimate. A PDF advert
-  // may list posts on several grades; with no way to tell which one the AI
-  // picked, its band is only used when the text names a single grade.
+  // still without pay falls back to the AI's market estimate.
   for (const j of open) {
-    const text = `${j.title} ${j.description ?? ""} ${j.details ?? ""}`;
-    const grades = new Set([...text.matchAll(/\bCSG\s?-?\s?(\d{1,2})\b/gi)].map((m) => Number(m[1])));
-    j.salary ??= (isPdfAdvert(j) && grades.size > 1 ? undefined : salaryFromCsg(text)) ?? j.payEstimate;
+    j.salary ??= csgBand(`${j.title} ${j.description ?? ""} ${j.details ?? ""}`, isPdfAdvert(j)) ?? j.payEstimate;
   }
 
-  const toSend = matched.slice(0, MAX_NOTIFICATIONS_PER_RUN);
+  // Other people's alerts go first (a few at most); any of the main list
+  // pushed over the cap stays unseen and is sent next run.
+  let extraSent = 0;
+  try {
+    for (const alert of await pendingAlerts(env.DB, now.getTime(), EXTRA_SENDS_PER_RUN)) {
+      await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, alert.message, openKeyboard(alert.url));
+      await markAlertSent(env.DB, alert, Date.now());
+      extraSent++;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } catch (e) {
+    // Unsent ones stay pending for the next run.
+    errors.push(`extra alerts: ${e}`);
+  }
+
+  const toSend = matched.slice(0, MAX_NOTIFICATIONS_PER_RUN - extraSent);
   const sent: Job[] = [];
   for (const job of toSend) {
     try {
@@ -418,6 +450,8 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
     new: unseen.length,
     seeded: seeding.length,
     notified: sent.length,
+    extraScored,
+    extraSent,
     scored: open.filter((j) => j.score != null).length,
     secondLooks,
     closed: open.filter((j) => j.deadlineAt && j.deadlineAt < now.getTime()).length,
@@ -429,15 +463,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   return summary;
 }
 
-/**
- * Whole-word match. Short all-caps keywords ("IT", "ICT") are case-sensitive
- * so "IT Officer" matches but "apply for it" does not.
- */
-export function keywordRegex(keyword: string): RegExp {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const caseSensitive = keyword.length <= 3 && keyword === keyword.toUpperCase();
-  return new RegExp(`(^|[^A-Za-z0-9])${escaped}($|[^A-Za-z0-9])`, caseSensitive ? "" : "i");
-}
+export { keywordRegex };
 
 // Keywords are matched against the title only. LinkedIn results already come
 // from targeted searches, so the include list doesn't apply to them.

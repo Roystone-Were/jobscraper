@@ -61,6 +61,16 @@ export function salaryFromCsg(text: string): string | undefined {
   return band ? `${kesRange(...band)}/month basic · CSG ${m![1]} civil service scale (2026)` : undefined;
 }
 
+/**
+ * The official band for an ad's CSG grade. A PDF advert may list posts on
+ * several grades; with no way to tell which post the AI picked, `singleOnly`
+ * returns a band only when the text names one grade.
+ */
+export function csgBand(text: string, singleOnly: boolean): string | undefined {
+  if (singleOnly && new Set([...text.matchAll(/\bCSG\s?-?\s?(\d{1,2})\b/gi)].map((m) => Number(m[1]))).size > 1) return undefined;
+  return salaryFromCsg(text);
+}
+
 /** schema.org JobPosting pay, with sanity checks: some sites fill it with junk. */
 export function salaryFromJsonLd(post: {
   baseSalary?: { currency?: string; value?: { value?: unknown; minValue?: unknown; maxValue?: unknown; unitText?: string } };

@@ -34,3 +34,20 @@ CREATE TABLE IF NOT EXISTS linkedin_inbox (
   job   TEXT NOT NULL,      -- Job as JSON
   added INTEGER NOT NULL    -- unix ms
 );
+
+-- Results for other people (EXTRA_PROFILES in src/profile.ts, see src/extra.ts).
+-- One row per job scored for them, so nothing is scored or sent twice. Matches
+-- keep their Telegram message until it is sent.
+CREATE TABLE IF NOT EXISTS profile_alerts (
+  profile     TEXT NOT NULL,      -- ExtraProfile.key
+  id          TEXT NOT NULL,      -- same as seen_jobs.id
+  fingerprint TEXT,               -- src/dedupe.ts, to skip copies on other boards
+  score       INTEGER,            -- AI fit 1-10 against their profile
+  scored_at   INTEGER NOT NULL,   -- unix ms
+  message     TEXT,               -- Telegram HTML for a match; NULL if below their threshold
+  url         TEXT,
+  notified_at INTEGER,            -- unix ms when sent
+  PRIMARY KEY (profile, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_alerts_fingerprint ON profile_alerts (profile, fingerprint);

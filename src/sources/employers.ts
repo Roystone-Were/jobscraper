@@ -23,6 +23,10 @@ export const EMPLOYERS: { name: string; ats: Ats; slug: string }[] = [
   { name: "Busara Center", ats: "bamboohr", slug: "busara" },
   { name: "Africa's Talking", ats: "bamboohr", slug: "africastalking" },
   { name: "Poa Internet", ats: "bamboohr", slug: "poainternet" },
+  // Added 2026-10-19. Tala and Koko had no Kenya jobs then but hire in Nairobi.
+  { name: "Thunes", ats: "greenhouse", slug: "thunes" },
+  { name: "Tala", ats: "lever", slug: "tala" },
+  { name: "Koko Networks", ats: "lever", slug: "kokonetworks" },
 ];
 
 const KENYA = /kenya|nairobi|mombasa|kisumu|nakuru|eldoret|thika|kiambu|machakos|homa ?bay|\bKE\b/i;

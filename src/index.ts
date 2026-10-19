@@ -11,11 +11,12 @@ import { fetchImpactpool } from "./sources/impactpool";
 import { EMPLOYERS, fetchEmployer } from "./sources/employers";
 import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
 // Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
-import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchIcta, fetchNakuru, fetchPsc } from "./sources/boards";
+import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchGaa, fetchIcta, fetchJkuat, fetchMeru, fetchNakuru, fetchNyamira, fetchPsc } from "./sources/boards";
+import { fetchReliefWeb } from "./sources/reliefweb";
 import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn, queueLinkedIn, readLinkedInInbox } from "./sources/linkedin";
 import { fetchMyJobMag } from "./sources/myjobmag";
-import { fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
+import { COUNTY_FEEDS, fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
 import { formatJob, jobKeyboard, sendTelegram, tg } from "./telegram";
 import { type Env, type Job, splitList } from "./types";
 
@@ -48,6 +49,12 @@ const SECONDARY: { name: string; fetch: () => Promise<Job[]> }[] = [
   { name: "icta", fetch: fetchIcta },
   { name: "nakuru", fetch: fetchNakuru },
   { name: "kiambu", fetch: () => fetchRss(KIAMBU_FEED) },
+  { name: "reliefweb", fetch: fetchReliefWeb },
+  { name: "gaa", fetch: fetchGaa },
+  { name: "nyamira", fetch: fetchNyamira },
+  { name: "meru", fetch: fetchMeru },
+  { name: "jkuat", fetch: fetchJkuat },
+  ...COUNTY_FEEDS.map((f) => ({ name: f.source, fetch: () => fetchRss(f) })),
   ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
   ...ETALENT_BOARDS.map((b) => ({ name: `etalent:${b.slug}`, fetch: () => fetchEtalent(b) })),
 ];

@@ -18,6 +18,13 @@ export interface Job {
     | "icta"
     | "nakuru"
     | "kiambu"
+    | "reliefweb"
+    | "gaa"
+    | "nyamira"
+    | "meru"
+    | "jkuat"
+    | "nyeri"
+    | "kisumu"
     | "linkedin";
   title: string;
   company?: string;

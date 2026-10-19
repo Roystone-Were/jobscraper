@@ -27,6 +27,8 @@ export interface Feed {
   source: Job["source"];
   url: string;
   splitCompany: boolean;
+  /** Employer to show when the feed is a single organisation's. */
+  company?: string;
   /** Optional title filter, for feeds that mix job adverts with other posts. */
   keep?: RegExp;
   /** Skip items older than this (for feeds without closing dates). */
@@ -41,6 +43,27 @@ export const KIAMBU_FEED: Feed = {
   keep: /vacanc|advert|recruit|position|officer|job/i,
   maxAgeDays: 30,
 };
+
+/** County feeds that mix adverts with shortlists, tenders and news. */
+export const COUNTY_FEEDS: Feed[] = [
+  {
+    source: "nyeri",
+    url: "https://www.nyeri.go.ke/category/vacancies/feed/",
+    splitCompany: false,
+    company: "County Government of Nyeri",
+    keep: /vacanc|advert|position|call for applications|recruit/i,
+    maxAgeDays: 30,
+  },
+  {
+    // Downloads feed: adverts are posted as files, next to tenders.
+    source: "kisumu",
+    url: "https://www.kisumu.go.ke/?post_type=wpdmpro&feed=rss2",
+    splitCompany: false,
+    company: "County Government of Kisumu",
+    keep: /job advert|vacanc|recruit/i,
+    maxAgeDays: 30,
+  },
+];
 
 export async function fetchRss(feed: Feed): Promise<Job[]> {
   const res = await fetch(feed.url, { headers: { "User-Agent": USER_AGENT } });
@@ -92,7 +115,7 @@ export function parseRss(xml: string, feed: Feed): Job[] {
 
     let title = fixMojibake(cleanText(rawTitle));
     if (feed.keep && (!feed.keep.test(title) || /shortlist|result|interview|successful/i.test(title))) continue;
-    let company: string | undefined;
+    let company = feed.company;
     if (feed.splitCompany) {
       const at = title.lastIndexOf(" at ");
       if (at > 0) [title, company] = [title.slice(0, at), title.slice(at + 4)];

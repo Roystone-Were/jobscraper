@@ -20,6 +20,13 @@ export const SOURCE_LABELS: Record<Job["source"], string> = {
   icta: "ICT Authority",
   nakuru: "Nakuru County",
   kiambu: "Kiambu County",
+  reliefweb: "ReliefWeb",
+  gaa: "Government Advertising Agency",
+  nyamira: "Nyamira County",
+  meru: "Meru County",
+  jkuat: "JKUAT",
+  nyeri: "Nyeri County",
+  kisumu: "Kisumu County",
   linkedin: "LinkedIn",
 };
 

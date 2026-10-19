@@ -1,6 +1,6 @@
 import { htmlToText } from "../details";
 import { kesRange, salaryFromCsg } from "../salary";
-import { cleanText, formatNairobi, type Job, USER_AGENT } from "../types";
+import { cleanText, decodeEntities, formatNairobi, type Job, USER_AGENT } from "../types";
 
 async function get(url: string, label: string): Promise<string> {
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
@@ -240,4 +240,160 @@ export function parseEtalent(html: string, board: (typeof ETALENT_BOARDS)[number
     });
   }
   return jobs;
+}
+
+// ---------- Government Advertising Agency: national government adverts
+// (ministries, parastatals, public universities) in one table. Titles are
+// generic ("Vacancies at KRA"); the positions are only in the PDF.
+
+const GAA = "https://gaa.go.ke/job-adverts";
+
+export async function fetchGaa(): Promise<Job[]> {
+  return parseGaa(await get(GAA, "GAA"));
+}
+
+/** "28th October, 2026" / "21 October, 2026." → close of that day in Nairobi. */
+const longDate = (s: string) => {
+  const t = Date.parse(`${s.replace(/(\d+)(st|nd|rd|th)\b/, "$1").replace(/[,.]/g, "").trim()} 20:59 UTC`);
+  return Number.isNaN(t) ? undefined : t;
+};
+
+// Built once: the page is ~650 KB and CPU time on the free plan is tight.
+const GAA_CELL = Object.fromEntries(
+  ["title", "field-advert-attachment", "field-recruiting-agency", "field-submission-date"].map((f) => [
+    f,
+    new RegExp(`views-field-${f}">([\\s\\S]*?)</td>`),
+  ]),
+);
+
+export function parseGaa(html: string, now = Date.now()): Job[] {
+  const jobs: Job[] = [];
+  // ~450 rows back to 2024, newest first; only the top ones can still be open.
+  for (const row of html.slice(0, 250_000).split("<tr").slice(2, 120)) {
+    const cell = (field: string) => row.match(GAA_CELL[field])?.[1];
+    const title = cell("title");
+    const pdf = cell("field-advert-attachment")?.match(/href="([^"]+)"/)?.[1];
+    if (!title || !pdf) continue;
+    const closes = cleanText(cell("field-submission-date") ?? "").replace(/\.$/, "");
+    const at = longDate(closes);
+    if (!at || at < now) continue; // closed, or no date to tell
+    const agency = cleanText(cell("field-recruiting-agency") ?? "");
+    jobs.push({
+      id: `gaa:${pdf}`,
+      source: "gaa",
+      title: cleanText(title),
+      company: agency || undefined,
+      location: "Kenya",
+      description: `Government advert (PDF) listing one or more posts at ${agency || "a public body"}; the posts are named only in the PDF.`,
+      deadline: closes,
+      deadlineAt: at,
+      url: new URL(pdf, GAA).href,
+    });
+  }
+  return jobs;
+}
+
+// ---------- Nyamira County Public Service Board: the job list is JSON in the
+// page's data-page attribute (Laravel/Inertia).
+
+const NYAMIRA = "https://cpsb.nyamira.go.ke/";
+
+export async function fetchNyamira(): Promise<Job[]> {
+  return parseNyamira(await get(NYAMIRA, "Nyamira County"));
+}
+
+interface NyamiraJob {
+  id: number;
+  title: string;
+  job_group?: string;
+  description?: string;
+  positions?: number;
+  deadline?: string;
+  status?: string;
+  created_at?: string;
+}
+
+export function parseNyamira(html: string, now = Date.now()): Job[] {
+  const m = html.match(/data-page="([^"]*)"/);
+  if (!m) return [];
+  const data = JSON.parse(decodeEntities(m[1])) as { props?: { vacancies?: { data?: NyamiraJob[] } } };
+  return (data.props?.vacancies?.data ?? [])
+    .filter((j) => j.status !== "Closed" && !(j.deadline && Date.parse(j.deadline) < now))
+    .map((j) => {
+      const text = htmlToText(j.description ?? "");
+      // Deadlines are midnight UTC of the closing day; show that day.
+      const at = j.deadline ? Date.parse(j.deadline) + 21 * 3_600_000 : undefined;
+      return {
+        id: `nyamira:${j.id}`,
+        source: "nyamira" as const,
+        // Titles keep the advert's numbering: "26.\tMEDICAL ENGINEERING TECHNICIAN III".
+        title: cleanText(j.title.replace(/^\d+\.\s*/, "")),
+        company: "Nyamira County Public Service Board",
+        location: "Nyamira, Kenya",
+        description: [j.job_group, j.positions && `${j.positions} post(s)`, text.slice(0, 900)].filter(Boolean).join("; "),
+        details: text.slice(0, 3000) || undefined,
+        posted: j.created_at ? formatNairobi(new Date(j.created_at)) : undefined,
+        deadline: j.deadline?.slice(0, 10),
+        deadlineAt: at,
+        url: NYAMIRA,
+      };
+    });
+}
+
+// ---------- Meru County: a downloads table mixing adverts with shortlists.
+
+const MERU = "https://meru.go.ke/jobs-vacancies/";
+
+export async function fetchMeru(): Promise<Job[]> {
+  return parseMeru(await get(MERU, "Meru County"));
+}
+
+export function parseMeru(html: string, now = Date.now()): Job[] {
+  const jobs: Job[] = [];
+  for (const row of html.matchAll(/<tr><td nowrap>([^<]*)<\/td><td><a\s+href="(resource\/(\d+)[^"]*)"[^>]*>([^<]*)<\/a>/g)) {
+    const [, date, path, id, rawTitle] = row;
+    const title = cleanText(rawTitle);
+    if (!/advert|vacanc|recruit|position/i.test(title) || /shortlist|interview|notice|result|board members/i.test(title)) continue;
+    // No closing dates; county adverts usually run 2-3 weeks.
+    const posted = Date.parse(date.replace(/-/g, " "));
+    if (Number.isNaN(posted) || now - posted > 30 * 86_400_000) continue;
+    jobs.push({
+      id: `meru:${id}`,
+      source: "meru",
+      title,
+      company: "Meru County Public Service Board",
+      location: "Meru, Kenya",
+      description: "County advert (PDF); the posts are named only in the PDF.",
+      posted: date,
+      url: new URL(path, MERU).href,
+    });
+  }
+  return jobs;
+}
+
+// ---------- JKUAT: advert PDFs; the upload month in the path is the only date.
+
+const JKUAT = "https://www.jkuat.ac.ke/vacancies/";
+
+export async function fetchJkuat(): Promise<Job[]> {
+  return parseJkuat(await get(JKUAT, "JKUAT"));
+}
+
+export function parseJkuat(html: string, now = Date.now()): Job[] {
+  const jobs = new Map<string, Job>();
+  for (const [, url, y, mo, rawTitle] of html.matchAll(/<a id="wp-block-file[^"]*" href="([^"]*\/uploads\/(\d{4})\/(\d{2})\/[^"]*)">([^<]+)<\/a>/g)) {
+    // Uploaded this month or in the previous two.
+    if (now - Date.UTC(Number(y), Number(mo) - 1, 1) > 75 * 86_400_000) continue;
+    jobs.set(url, {
+      id: `jkuat:${url.split("/uploads/")[1]}`,
+      source: "jkuat",
+      title: cleanText(rawTitle).replace(/^(final\s+)?(amended\s+)?advert(\s+for)?\s+/i, "").replace(/\s+final$/i, ""),
+      company: "Jomo Kenyatta University of Agriculture and Technology (JKUAT)",
+      location: "Juja, Kenya",
+      description: "University advert (PDF).",
+      posted: `${y}-${mo}`,
+      url,
+    });
+  }
+  return [...jobs.values()];
 }

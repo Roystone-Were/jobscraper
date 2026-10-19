@@ -5,7 +5,9 @@ Checks Kenyan job sources and sends good matches to Telegram. Runs free on Cloud
 - **Every run:** MyJobMag Kenya, BrighterMonday, JobWebKenya, Opportunities for Young Kenyans,
   Corporate Staffing, UNTalent (UN IT & Telecom, Kenya), Impactpool.
 - **Rotating, 6 per run:** Fuzu (latest + IT category), Public Service Commission, ICT Authority,
-  Nakuru and Kiambu county boards, Telegram channels (`src/sources/telegram.ts`), and 15 employers'
+  Government Advertising Agency (national government adverts), ReliefWeb (NGO/UN ICT jobs in Kenya),
+  JKUAT, Nakuru, Kiambu, Nyamira, Meru, Nyeri and Kisumu county boards, Telegram channels
+  (`src/sources/telegram.ts`), and 18 employers'
   careers boards via their public ATS APIs (`src/sources/employers.ts`, Kenya-located jobs only),
   and eTalent-hosted boards such as People Foco Agency (`ETALENT_BOARDS` in `src/sources/boards.ts`).
 - **LinkedIn:** fetched by a PC on a Task Scheduler timer and pushed to the Worker (LinkedIn blocks

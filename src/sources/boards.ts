@@ -365,7 +365,8 @@ export function parseMeru(html: string, now = Date.now()): Job[] {
       location: "Meru, Kenya",
       description: "County advert (PDF); the posts are named only in the PDF.",
       posted: date,
-      url: new URL(path, MERU).href,
+      // Relative to the page's <base href>, the site root.
+      url: new URL(path, "https://meru.go.ke/").href,
     });
   }
   return jobs;

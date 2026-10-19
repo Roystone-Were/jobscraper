@@ -1,7 +1,7 @@
 import { scoreJob } from "./ai";
 import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
-import { fetchDetails, hasDetailPage } from "./details";
+import { fetchDetails, fetchPdfText, hasDetailPage, isPdfAdvert, pdfExcerpt } from "./details";
 import { salaryFromCsg, verifiedAiSalary } from "./salary";
 import { buildDaily, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
 import { getSetting, loadSettings, setSetting } from "./settings";
@@ -33,6 +33,12 @@ const MAX_NOTIFICATIONS_PER_RUN = 10;
  */
 const AI_PER_RUN = 12;
 const DETAIL_PER_RUN = 5;
+/**
+ * PDF adverts read per run. Each costs up to 3 requests (viewer page, PDF,
+ * conversion) and takes 2 of the DETAIL_PER_RUN slots, so job pages plus
+ * second looks plus PDFs stay within the 10 requests budgeted for them.
+ */
+const PDF_PER_RUN = 2;
 
 /**
  * Lower-volume sources take turns: this many per run, rotating, so the request
@@ -303,17 +309,29 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   if (settings.aiScoring && env.AI && open.length) {
     const budget = await aiBudgetLeft(env, now);
     if (budget > 0) {
-      const batch = open.slice(0, Math.min(AI_PER_RUN, budget));
+      // PDF adverts over this run's allowance wait, unseen, for a later run.
+      let pdfSlots = PDF_PER_RUN;
+      const ready = open.filter((j) => !isPdfAdvert(j) || pdfSlots-- > 0);
+      const batch = ready.slice(0, Math.min(AI_PER_RUN, budget));
       deferred = open.length - batch.length;
       open = batch;
-      const scores = await Promise.allSettled(batch.map((j) => scoreJob(env.AI, j)));
+      // A PDF advert's title says little ("Vacancies at KRA"), so its text is
+      // read first and the AI scores that. If reading fails, the title is scored.
+      const pdfs = batch.filter(isPdfAdvert);
+      const read = await Promise.allSettled(
+        pdfs.map(async (j) => {
+          j.details = pdfExcerpt(await fetchPdfText(env.AI, j), include);
+        }),
+      );
+      read.forEach((r) => r.status === "rejected" && errors.push(`pdf: ${r.reason}`));
+      const scores = await Promise.allSettled(batch.map((j) => scoreJob(env.AI, j, isPdfAdvert(j) && !!j.details)));
       scores.forEach((r, i) => {
         if (r.status === "fulfilled") {
           batch[i].score = r.value.score;
           batch[i].scoreReason = r.value.reason;
           batch[i].strengths = r.value.strengths;
           batch[i].gaps = r.value.gaps;
-          batch[i].salary ??= verifiedAiSalary(r.value.salary, `${batch[i].title} ${batch[i].description ?? ""}`);
+          batch[i].salary ??= verifiedAiSalary(r.value.salary, `${batch[i].title} ${batch[i].description ?? ""} ${batch[i].details ?? ""}`);
           batch[i].payEstimate = r.value.estimate;
         } else {
           errors.push(`ai: ${r.reason}`);
@@ -323,10 +341,11 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
       // if it carried it, otherwise the job page) is scored again, and the
       // page's closing date is checked. Clear no's (1-2) are not worth it.
       // Highest first, so likely alerts are always checked.
+      // PDF adverts were already scored on their full text.
       const refine = batch
-        .filter((j) => j.score != null && j.score >= 3 && (j.details || hasDetailPage(j)))
+        .filter((j) => j.score != null && j.score >= 3 && !isPdfAdvert(j) && (j.details || hasDetailPage(j)))
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, DETAIL_PER_RUN);
+        .slice(0, Math.max(0, DETAIL_PER_RUN - 2 * pdfs.length));
       const refined = await Promise.allSettled(
         refine.map(async (j) => {
           if (!j.details) {
@@ -362,9 +381,13 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   const unmatched = [...skipped, ...open.filter((j) => !isMatch(j))];
 
   // Government ads quoting a CSG grade get the official pay band; anything
-  // still without pay falls back to the AI's market estimate.
+  // still without pay falls back to the AI's market estimate. A PDF advert
+  // may list posts on several grades; with no way to tell which one the AI
+  // picked, its band is only used when the text names a single grade.
   for (const j of open) {
-    j.salary ??= salaryFromCsg(`${j.title} ${j.description ?? ""} ${j.details ?? ""}`) ?? j.payEstimate;
+    const text = `${j.title} ${j.description ?? ""} ${j.details ?? ""}`;
+    const grades = new Set([...text.matchAll(/\bCSG\s?-?\s?(\d{1,2})\b/gi)].map((m) => Number(m[1])));
+    j.salary ??= (isPdfAdvert(j) && grades.size > 1 ? undefined : salaryFromCsg(text)) ?? j.payEstimate;
   }
 
   const toSend = matched.slice(0, MAX_NOTIFICATIONS_PER_RUN);

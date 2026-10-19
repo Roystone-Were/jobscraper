@@ -40,6 +40,70 @@ export async function fetchDetails(job: Job): Promise<Details> {
   return extractDetails(await res.text(), cfg.marker);
 }
 
+/**
+ * Sources whose adverts are PDFs, often titled only "Vacancies at X" with
+ * several posts inside. Their text is read before the AI scores them.
+ */
+const PDF_SOURCES = new Set<Job["source"]>(["gaa", "jkuat", "meru"]);
+export const isPdfAdvert = (job: Job) => PDF_SOURCES.has(job.source);
+
+const isPdf = (b: Uint8Array) => b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46; // "%PDF"
+
+async function download(url: string, label: string): Promise<Uint8Array> {
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  if (!res.ok) throw new Error(`pdf ${label} -> HTTP ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/** The advert's text, via Workers AI's PDF-to-Markdown conversion. */
+export async function fetchPdfText(ai: Ai, job: Job): Promise<string> {
+  let bytes = await download(job.url, job.source);
+  if (!isPdf(bytes)) {
+    // Meru links to a viewer page with the PDF embedded.
+    const src = new TextDecoder().decode(bytes).match(/<(?:embed|object)[^>]*?(?:src|data)="([^"#]+\.pdf)/i)?.[1];
+    if (!src) throw new Error(`pdf ${job.source}: no PDF at ${job.url}`);
+    bytes = await download(new URL(src, job.url).href, job.source);
+    if (!isPdf(bytes)) throw new Error(`pdf ${job.source}: not a PDF at ${src}`);
+  }
+  const out = await ai.toMarkdown({ name: "advert.pdf", blob: new Blob([bytes], { type: "application/pdf" }) });
+  if (out.format === "error") throw new Error(`pdf ${job.source}: ${out.error}`);
+  // Drop the file-metadata block (author, PDF version...) and page markers.
+  const body = out.data.split(/^## Contents$/m)[1] ?? out.data;
+  return body.replace(/^### Page \d+$/gm, " ");
+}
+
+/**
+ * At most MAX_TEXT characters for the AI. Short adverts go whole; long ones
+ * send the opening plus the text around each post matching the keywords, so
+ * an "ICT Officer" on page 8 of a 20-post advert is still seen.
+ */
+export function pdfExcerpt(markdown: string, keywords: RegExp[]): string {
+  const text = markdown.replace(/\s+/g, " ").trim();
+  if (text.length <= MAX_TEXT) return text;
+  const spans: [number, number][] = [[0, 600]];
+  // Adverts repeat boilerplate per post ("Self-developer" under every post's
+  // competencies): skip hyphenated matches and passages already taken.
+  const taken = new Set<string>();
+  for (const k of keywords) {
+    for (const m of text.matchAll(new RegExp(k.source, k.flags.replace("g", "") + "g"))) {
+      if (m[0].startsWith("-")) continue;
+      const passage = text.slice(m.index, m.index + 120);
+      if (taken.has(passage)) continue;
+      taken.add(passage);
+      spans.push([Math.max(0, m.index - 150), m.index + 850]);
+    }
+  }
+  if (spans.length === 1) return text.slice(0, MAX_TEXT); // no matching post
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const [from, to] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+    else merged.push([from, to]);
+  }
+  return merged.map(([from, to]) => text.slice(from, to)).join(" … ").slice(0, MAX_TEXT);
+}
+
 export function extractDetails(html: string, marker?: RegExp): Details {
   const ld = jobPostingLd(html);
   let text = ld?.description ? htmlToText(ld.description) : "";

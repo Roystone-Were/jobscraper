@@ -34,6 +34,8 @@ Target roles: <titles you want>. Not looking for: <roles, seniority or fields to
  *     scoring: `- 9-10: ...\n- 7-8: ...\n- 5-6: ...\n- 3-4: ...\n- 1-2: ...`,
  *     pay: `- Entry-level agronomist (0-2 years): 30,000-50,000\n- ...`,
  *     keywords: ["agronomist", "agronomy", "crop"],
+ *     // Optional: scholarship alerts too (src/scholarships.ts).
+ *     scholarships: `Study wanted: fully funded Master's ...\n\nScoring (integer 1-10):\n- 9-10: ...\n- 1-2: ...`,
  *   }
  */
 export const EXTRA_PROFILES: ExtraProfile[] = [];

@@ -25,6 +25,9 @@ const PAGE: Partial<Record<Job["source"], { marker?: RegExp }>> = {
   untalent: {},
   impactpool: { marker: /<[a-z]+[^>]*job-description/ },
   etalent: {},
+  // Scholarship posts (src/scholarships.ts), both WordPress.
+  opportunitydesk: { marker: /<div[^>]*class="[^"]*entry-content/ },
+  ofa: { marker: /<div[^>]*class="[^"]*entry-content/ },
   // LinkedIn is left out on purpose: every extra request makes its search
   // requests more likely to be rate-limited.
 };

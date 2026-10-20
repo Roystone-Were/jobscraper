@@ -19,6 +19,7 @@ import { fetchMyJobMag } from "./sources/myjobmag";
 import { COUNTY_FEEDS, fetchRss, KIAMBU_FEED, RSS_FEEDS } from "./sources/rss";
 import { markAlertSent, pendingAlerts, scoreExtraProfiles } from "./extra";
 import { EXTRA_PROFILES } from "./profile";
+import { isScholarship, isScholarshipId, SCHOLARSHIP_FEEDS } from "./scholarships";
 import { formatJob, jobKeyboard, openKeyboard, sendTelegram, tg } from "./telegram";
 import { type Env, type Job, splitList } from "./types";
 
@@ -48,7 +49,7 @@ const EXTRA_SENDS_PER_RUN = 5;
  * Lower-volume sources take turns: this many per run, rotating, so the request
  * budget stays fixed as the list grows. Budget per run: main sites (7) +
  * rotating (6) + LinkedIn (2) + AI (12) + job pages (5) + second AI look (5)
- * + other profiles' AI (EXTRA_AI_PER_RUN, 3) + Telegram sends (10) = 50 of
+ * + other profiles (EXTRA_REQUESTS_PER_RUN, 3) + Telegram sends (10) = 50 of
  * the free plan's 50. LinkedIn is pushed from a PC (LINKEDIN_PER_RUN=0), so
  * in practice it is 48.
  */
@@ -70,6 +71,8 @@ const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
   ...COUNTY_FEEDS.map((f) => ({ name: f.source, fetch: () => fetchRss(f) })),
   ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
   ...ETALENT_BOARDS.map((b) => ({ name: `etalent:${b.slug}`, fetch: () => fetchEtalent(b) })),
+  // Only fetched when someone in EXTRA_PROFILES wants scholarships.
+  ...(EXTRA_PROFILES.some((p) => p.scholarships) ? SCHOLARSHIP_FEEDS.map((f) => ({ name: f.name, fetch: () => fetchRss(f) })) : []),
 ];
 
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
@@ -292,9 +295,12 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   }
 
   const seen = await seenKeys(env.DB, fetched);
-  const unseen = fetched.filter(
-    (j) => !seen.ids.has(j.id) && !(j.fingerprint && seen.fingerprints.has(j.fingerprint)),
-  );
+  const isNew = (j: Job) => !seen.ids.has(j.id) && !(j.fingerprint && seen.fingerprints.has(j.fingerprint));
+  // Scholarship posts are only for EXTRA_PROFILES: recorded as seen, never
+  // scored for you. All of this run's go to them, new or not (see extra.ts).
+  const scholarships = fetched.filter(isScholarship);
+  const newPosts = scholarships.filter(isNew);
+  const unseen = fetched.filter((j) => isNew(j) && !isScholarship(j));
 
   // First time a source returns results: with AI scoring on, its current jobs
   // are scored like any others (only good matches are sent, so no flood). With
@@ -390,7 +396,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   if (EXTRA_PROFILES.length && settings.aiScoring && env.AI && !settings.paused) {
     try {
       const aiLeft = await aiBudgetLeft(env, now);
-      extraScored = await scoreExtraProfiles(env.DB, env.AI, unseen, settings.minScore, now.getTime(), aiLeft, errors);
+      extraScored = await scoreExtraProfiles(env.DB, env.AI, unseen, scholarships, settings.minScore, now.getTime(), aiLeft, errors);
       if (extraScored) await recordAiUsage(env, now, extraScored);
     } catch (e) {
       errors.push(`extra profiles: ${e}`);
@@ -416,7 +422,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
   let extraSent = 0;
   try {
     for (const alert of await pendingAlerts(env.DB, now.getTime(), EXTRA_SENDS_PER_RUN)) {
-      await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, alert.message, openKeyboard(alert.url));
+      await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, alert.message, openKeyboard(alert.url, isScholarshipId(alert.id) ? "Open ↗" : undefined));
       await markAlertSent(env.DB, alert, Date.now());
       extraSent++;
       await new Promise((r) => setTimeout(r, 400));
@@ -443,7 +449,7 @@ async function run(env: Env, now: Date, forceAll = false, skipLinkedIn = false, 
     }
   }
 
-  await markSeen(env.DB, [...seeding, ...unmatched, ...sent], now.getTime());
+  await markSeen(env.DB, [...seeding, ...unmatched, ...sent, ...newPosts], now.getTime());
 
   const summary = {
     fetched: fetched.length,

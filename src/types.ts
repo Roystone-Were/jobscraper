@@ -25,7 +25,9 @@ export interface Job {
     | "jkuat"
     | "nyeri"
     | "kisumu"
-    | "linkedin";
+    | "linkedin"
+    | "opportunitydesk"
+    | "ofa";
   title: string;
   company?: string;
   location?: string;
@@ -75,6 +77,11 @@ export interface ExtraProfile {
   keywords: string[];
   /** Alert threshold; defaults to the main /minscore. */
   minScore?: number;
+  /**
+   * Turns on scholarship alerts (src/scholarships.ts): the study they want
+   * and score bands for it ("- 9-10: ..." down to "- 1-2: ...").
+   */
+  scholarships?: string;
 }
 
 export interface Env {

@@ -28,6 +28,8 @@ export const SOURCE_LABELS: Record<Job["source"], string> = {
   nyeri: "Nyeri County",
   kisumu: "Kisumu County",
   linkedin: "LinkedIn",
+  opportunitydesk: "Opportunity Desk",
+  ofa: "Opportunities For Africans",
 };
 
 export function formatJob(job: Job): string {
@@ -53,7 +55,7 @@ export type Keyboard = { inline_keyboard: Button[][] };
 
 /** Buttons under each alert. `key` is the job's short_key. */
 /** Just the link: alerts for EXTRA_PROFILES have no Save/Hide (those act on your list). */
-export const openKeyboard = (url: string): Keyboard => ({ inline_keyboard: [[{ text: "Open job ↗", url }]] });
+export const openKeyboard = (url: string, text = "Open job ↗"): Keyboard => ({ inline_keyboard: [[{ text, url }]] });
 
 export function jobKeyboard(key: string, url: string, saved = false): Keyboard {
   return {

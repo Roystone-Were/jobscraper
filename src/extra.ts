@@ -1,16 +1,18 @@
-import { scoreJob } from "./ai";
-import { isPdfAdvert, pdfExcerpt } from "./details";
+import { scoreJob, scoreScholarship } from "./ai";
+import { fetchDetails, isPdfAdvert, pdfExcerpt } from "./details";
 import { EXTRA_PROFILES } from "./profile";
 import { csgBand, verifiedAiSalary } from "./salary";
+import { isScholarship, SCHOLARSHIP_SOURCES, withDeadline, worthScoring } from "./scholarships";
 import { keywordRegex } from "./settings";
 import { escape, formatJob } from "./telegram";
 import type { ExtraProfile, Job } from "./types";
 
 /**
- * AI scorings per run for all EXTRA_PROFILES together, part of the request
- * budget in index.ts. Jobs over the cap are picked up by a later run.
+ * Requests per run for all EXTRA_PROFILES together, part of the request
+ * budget in index.ts: one per job scored, two per scholarship (its page, then
+ * the AI). Anything over the cap is picked up by a later run.
  */
-export const EXTRA_AI_PER_RUN = 3;
+export const EXTRA_REQUESTS_PER_RUN = 3;
 
 /** Earlier jobs (seen_jobs, title and employer only) are checked back this far. */
 const LOOKBACK_MS = 14 * 86_400_000;
@@ -31,27 +33,31 @@ export interface PendingAlert {
  * sent (see pendingAlerts). `fresh` are this run's new jobs with their full
  * text; jobs from earlier runs come from seen_jobs. Must run before the main
  * profile's pay estimate is filled in, so `salary` is still only ad-stated pay.
+ * `scholarships` are every scholarship post fetched this run, seen before or
+ * not, so ones over the cap are tried again when their feed comes round.
  * Returns the number of AI calls made.
  */
 export async function scoreExtraProfiles(
   db: D1Database,
   ai: Ai,
   fresh: Job[],
+  scholarships: Job[],
   minScore: number,
   now: number,
   aiLeft: number,
   errors: string[],
 ): Promise<number> {
   let calls = 0;
+  let requests = 0;
+  const left = () => Math.min(EXTRA_REQUESTS_PER_RUN - requests, aiLeft - calls);
   for (const p of EXTRA_PROFILES) {
-    const left = Math.min(EXTRA_AI_PER_RUN, aiLeft) - calls;
-    if (left <= 0) break;
+    if (left() <= 0) break;
     const keywords = p.keywords.map(keywordRegex);
     const mentions = (s: string) => keywords.some((k) => k.test(s));
 
     // A PDF advert whose text hasn't been read yet waits for the run that reads it.
     const recent = fresh.filter(
-      (j) => !(isPdfAdvert(j) && !j.pdfText) && mentions(`${j.title} ${j.company ?? ""} ${j.description ?? ""} ${j.pdfText ?? ""}`),
+      (j) => !isScholarship(j) && !(isPdfAdvert(j) && !j.pdfText) && mentions(`${j.title} ${j.company ?? ""} ${j.description ?? ""} ${j.pdfText ?? ""}`),
     );
     const earlier = (await earlierJobs(db, p, now)).filter((j) => mentions(`${j.title} ${j.company ?? ""}`));
     const done = await alreadyScored(db, p.key, [...recent, ...earlier]);
@@ -66,7 +72,9 @@ export async function scoreExtraProfiles(
       queue.push(j);
     }
 
-    for (const j of queue.slice(0, left)) {
+    for (const j of queue) {
+      if (left() <= 0) break;
+      requests++;
       calls++;
       try {
         await scoreFor(db, ai, p, j, p.minScore ?? minScore, now);
@@ -75,8 +83,36 @@ export async function scoreExtraProfiles(
         errors.push(`${p.key}: ${e}`);
       }
     }
+
+    if (!p.scholarships) continue;
+    // Closing soonest first; posts without a date last.
+    const posts = scholarships.map(withDeadline).filter((j) => worthScoring(j, now));
+    const scored = await alreadyScored(db, p.key, posts);
+    const todo = posts
+      .filter((j) => !scored.has(j.id))
+      .sort((a, b) => (a.deadlineAt ?? Infinity) - (b.deadlineAt ?? Infinity));
+    for (const post of todo) {
+      if (left() < 2) break;
+      requests += 2;
+      calls++;
+      try {
+        await scoreScholarshipFor(db, ai, p, post, p.minScore ?? minScore, now);
+      } catch (e) {
+        errors.push(`${p.key} scholarship: ${e}`);
+      }
+    }
   }
   return calls;
+}
+
+async function scoreScholarshipFor(db: D1Database, ai: Ai, p: ExtraProfile, original: Job, minScore: number, now: number): Promise<void> {
+  const post: Job = { ...original };
+  // The feed has only the opening lines; eligibility and funding are on the page.
+  post.details = (await fetchDetails(post)).text;
+  const s = await scoreScholarship(ai, post, p);
+  Object.assign(post, { score: s.score, scoreReason: s.reason, strengths: s.strengths, gaps: s.gaps });
+  const message = s.score >= minScore ? `<b>${escape(p.label)}</b> · 🎓 Scholarship\n${formatJob(post)}` : null;
+  await record(db, p, post, s.score, now, message);
 }
 
 async function scoreFor(db: D1Database, ai: Ai, p: ExtraProfile, original: Job, minScore: number, now: number): Promise<void> {
@@ -94,11 +130,16 @@ async function scoreFor(db: D1Database, ai: Ai, p: ExtraProfile, original: Job, 
   });
   const open = !(job.deadlineAt && job.deadlineAt < now);
   const message = s.score >= minScore && open ? `<b>${escape(p.label)}</b>\n${formatJob(job)}` : null;
+  await record(db, p, job, s.score, now, message);
+}
+
+/** Stores a score for the profile; `message` is the alert still to send, or null. */
+async function record(db: D1Database, p: ExtraProfile, job: Job, score: number, now: number, message: string | null): Promise<void> {
   await db
     .prepare(
       "INSERT OR IGNORE INTO profile_alerts (profile, id, fingerprint, score, scored_at, message, url) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(p.key, job.id, job.fingerprint ?? null, s.score, now, message, job.url)
+    .bind(p.key, job.id, job.fingerprint ?? null, score, now, message, job.url)
     .run();
 }
 
@@ -111,10 +152,11 @@ async function earlierJobs(db: D1Database, p: ExtraProfile, now: number): Promis
     .prepare(
       `SELECT id, source, title, company, url, fingerprint FROM seen_jobs
        WHERE first_seen >= ? AND (${likes})
+         AND source NOT IN (${SCHOLARSHIP_SOURCES.map(() => "?").join(",")})
          AND id NOT IN (SELECT id FROM profile_alerts WHERE profile = ?)
        ORDER BY first_seen DESC LIMIT 50`,
     )
-    .bind(now - LOOKBACK_MS, ...p.keywords.flatMap((k) => [`%${k}%`, `%${k}%`]), p.key)
+    .bind(now - LOOKBACK_MS, ...p.keywords.flatMap((k) => [`%${k}%`, `%${k}%`]), ...SCHOLARSHIP_SOURCES, p.key)
     .all<{ id: string; source: Job["source"]; title: string; company: string | null; url: string; fingerprint: string | null }>();
   return results.map((r) => ({ ...r, company: r.company ?? undefined }));
 }

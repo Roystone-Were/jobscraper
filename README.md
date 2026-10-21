@@ -8,7 +8,9 @@ Checks Kenyan job sources and sends good matches to Telegram. Runs free on Cloud
   Government Advertising Agency (national government adverts; PDF adverts are read before scoring), JKUAT, Nakuru, Kiambu, Nyamira, Meru, Nyeri and Kisumu county boards, Telegram channels
   (`src/sources/telegram.ts`), and 18 employers'
   careers boards via their public ATS APIs (`src/sources/employers.ts`, Kenya-located jobs only),
-  and eTalent-hosted boards such as People Foco Agency (`ETALENT_BOARDS` in `src/sources/boards.ts`).
+  and eTalent-hosted boards such as People Foco Agency (`ETALENT_BOARDS` in `src/sources/boards.ts`),
+  and freehire.me's free API (Kenya jobs from company hiring systems such as Workday and Zoho Recruit;
+  `src/sources/freehire.ts`).
 - **LinkedIn:** fetched by a PC on a Task Scheduler timer and pushed to the Worker (LinkedIn blocks
   Cloudflare's IPs). See [`pc/README.md`](pc/README.md).
 - Runs every 10 minutes (hourly 11 pm–7 am Nairobi). Kenyajob.com is parsed but disabled:

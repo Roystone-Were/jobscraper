@@ -19,6 +19,7 @@ export interface Job {
     | "nakuru"
     | "kiambu"
     | "reliefweb"
+    | "freehire"
     | "gaa"
     | "nyamira"
     | "meru"

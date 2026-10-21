@@ -12,6 +12,7 @@ import { EMPLOYERS, fetchEmployer } from "./sources/employers";
 import { fetchTelegram, TELEGRAM_CHANNELS } from "./sources/telegram";
 // Kenyajob (fetchKenyajob) parses fine but returns 403 to Cloudflare's IPs.
 import { ETALENT_BOARDS, FUZU_PAGES, fetchEtalent, fetchFuzu, fetchGaa, fetchIcta, fetchJkuat, fetchMeru, fetchNakuru, fetchNyamira, fetchPsc } from "./sources/boards";
+import { fetchFreehire } from "./sources/freehire";
 import { fetchReliefWeb, RELIEFWEB_FILTERS } from "./sources/reliefweb";
 import { fetchUnTalent } from "./sources/untalent";
 import { fetchLinkedIn, queueLinkedIn, readLinkedInInbox } from "./sources/linkedin";
@@ -68,6 +69,7 @@ const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
   { name: "jkuat", fetch: fetchJkuat },
   { name: "reliefweb:ict", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.ict) },
   { name: "reliefweb:agriculture", fetch: (env) => fetchReliefWeb(env.RELIEFWEB_APPNAME, RELIEFWEB_FILTERS.agriculture) },
+  { name: "freehire", fetch: fetchFreehire },
   ...COUNTY_FEEDS.map((f) => ({ name: f.source, fetch: () => fetchRss(f) })),
   ...EMPLOYERS.map((e) => ({ name: `employer:${e.slug}`, fetch: () => fetchEmployer(e) })),
   ...ETALENT_BOARDS.map((b) => ({ name: `etalent:${b.slug}`, fetch: () => fetchEtalent(b) })),

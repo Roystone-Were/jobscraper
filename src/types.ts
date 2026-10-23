@@ -106,6 +106,8 @@ export interface Env {
   EXCLUDE_KEYWORDS: string;
   MYJOBMAG_QUERIES: string;
   LINKEDIN_KEYWORDS: string;
+  /** Extra LinkedIn searches the PC runs a few at a time, after LINKEDIN_KEYWORDS. */
+  LINKEDIN_KEYWORDS_ROTATING: string;
   LINKEDIN_LOCATION: string;
   /** LinkedIn searches per run, rotating through LINKEDIN_KEYWORDS. */
   LINKEDIN_PER_RUN: string;

@@ -36,6 +36,8 @@
     // in order, and stops at the first block (HTTP 429), so the last ones are the first to drop.
     // "aquaculture" and "fisheries" are for an extra profile (EXTRA_PROFILES in src/profile.ts).
     "LINKEDIN_KEYWORDS": "software developer, IT support, network engineer, network administrator, network technician, systems administrator, cyber security, aquaculture, fisheries",
+    // More searches, 4 per push in turn (each about hourly), after the ones above.
+    "LINKEDIN_KEYWORDS_ROTATING": "help desk, service desk, desktop support, IT technician, NOC engineer, ICT officer, field engineer, IT assistant",
     "LINKEDIN_LOCATION": "Kenya",
     // LinkedIn searches the Worker itself makes per run (rotating, 4 s apart). 0 = none:
     // LinkedIn answers Cloudflare's IPs with 429, so a PC pushes results to /linkedin instead.

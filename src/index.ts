@@ -82,6 +82,9 @@ const SECONDARY: { name: string; fetch: (env: Env) => Promise<Job[]> }[] = [
   ...(EXTRA_PROFILES.some((p) => p.scholarships) ? SCHOLARSHIP_FEEDS.map((f) => ({ name: f.name, fetch: () => fetchRss(f) })) : []),
 ];
 
+/** LINKEDIN_KEYWORDS_ROTATING searches added to each PC push (see GET /linkedin). */
+const LINKEDIN_ROTATING_PER_PUSH = 4;
+
 /** Mondays 08:00 Nairobi (05:00 UTC). Must match the second cron in wrangler.jsonc. */
 export const DIGEST_CRON = "0 5 * * 1";
 /** Daily 07:00 Nairobi (04:00 UTC) round-up. Must match wrangler.jsonc. */
@@ -136,7 +139,14 @@ export default {
         await recordHealth(env.DB, now, [{ source: "linkedin", jobs: parsed }]);
         return Response.json({ keyword, parsed });
       }
-      return Response.json({ keywords: splitList(env.LINKEDIN_KEYWORDS), location: env.LINKEDIN_LOCATION });
+      // Every push runs all of LINKEDIN_KEYWORDS, then the next few rotating
+      // ones (by half hour), so pushes stay short and the extras are each
+      // searched about hourly. The PC stops at a block, so the extras go last.
+      const rotating = splitList(env.LINKEDIN_KEYWORDS_ROTATING);
+      const perPush = Math.min(LINKEDIN_ROTATING_PER_PUSH, rotating.length);
+      const halfHour = Math.floor(Date.now() / 1_800_000);
+      const extra = Array.from({ length: perPush }, (_, i) => rotating[(halfHour * perPush + i) % rotating.length]);
+      return Response.json({ keywords: [...new Set([...splitList(env.LINKEDIN_KEYWORDS), ...extra])], location: env.LINKEDIN_LOCATION });
     }
 
     const authorized = env.RUN_KEY && url.searchParams.get("key") === env.RUN_KEY;

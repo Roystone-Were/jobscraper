@@ -138,7 +138,8 @@ Upgrading an older database: `npx wrangler d1 execute job-scraper --remote --fil
 
 ## Daily round-up
 Every day at 07:00 Nairobi (or `/today`): jobs checked and alerts sent in the last 24 h, the best
-matches, and near misses that scored just under your threshold.
+matches, and near misses that scored just under your threshold. At 18:00 a short "Today's maybes"
+list sends the day's near misses (only if there are any); each list covers the time since the other.
 
 ## Telegram commands & buttons
 Each alert has **⭐ Save**, **👎 Not interested** (collapses it, with Undo) and **Open job** buttons.

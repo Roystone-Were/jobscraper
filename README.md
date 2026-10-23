@@ -63,6 +63,7 @@ Edit `vars` in `wrangler.jsonc` (all comma-separated):
 | `EXCLUDE_KEYWORDS` | `senior, intern` | Skip if the title contains any. |
 | `MYJOBMAG_QUERIES` | `software developer` | Optional extra MyJobMag searches. The latest 100 jobs always come from MyJobMag's feed. |
 | `LINKEDIN_KEYWORDS` | `software engineer, backend` | LinkedIn searches; the PC script runs them all. |
+| `LINKEDIN_KEYWORDS_ROTATING` | `help desk, service desk` | Extra LinkedIn searches; each PC push adds the next 4 after the ones above. |
 | `LINKEDIN_LOCATION` | `Kenya` / `Nairobi` / `Remote` | LinkedIn location filter. |
 | `LINKEDIN_PER_RUN` | `0` | LinkedIn searches the Worker makes itself per run (rotating). `0` = leave it to the PC. |
 

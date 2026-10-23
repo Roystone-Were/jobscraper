@@ -77,7 +77,10 @@ export interface ExtraProfile {
   scoring: string;
   /** Kenyan monthly pay ranges for their field, one "- role: min-max" per line. */
   pay: string;
-  /** Whole words; only jobs whose title, employer or summary mention one are scored for them. */
+  /**
+   * Whole words; only jobs whose title, employer or summary mention one are
+   * scored for them. Empty for scholarship alerts only.
+   */
   keywords: string[];
   /** Alert threshold; defaults to the main /minscore. */
   minScore?: number;

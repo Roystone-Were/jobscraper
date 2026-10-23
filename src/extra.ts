@@ -50,37 +50,43 @@ export async function scoreExtraProfiles(
   let calls = 0;
   let requests = 0;
   const left = () => Math.min(EXTRA_REQUESTS_PER_RUN - requests, aiLeft - calls);
-  for (const p of EXTRA_PROFILES) {
+  // A different profile goes first each 10-minute slot, so one with a
+  // backlog doesn't take every run's few requests.
+  const first = Math.floor(now / 600_000) % Math.max(EXTRA_PROFILES.length, 1);
+  for (const p of [...EXTRA_PROFILES.slice(first), ...EXTRA_PROFILES.slice(0, first)]) {
     if (left() <= 0) break;
-    const keywords = p.keywords.map(keywordRegex);
-    const mentions = (s: string) => keywords.some((k) => k.test(s));
+    // No keywords: scholarships only.
+    if (p.keywords.length) {
+      const keywords = p.keywords.map(keywordRegex);
+      const mentions = (s: string) => keywords.some((k) => k.test(s));
 
-    // A PDF advert whose text hasn't been read yet waits for the run that reads it.
-    const recent = fresh.filter(
-      (j) => !isScholarship(j) && !(isPdfAdvert(j) && !j.pdfText) && mentions(`${j.title} ${j.company ?? ""} ${j.description ?? ""} ${j.pdfText ?? ""}`),
-    );
-    const earlier = (await earlierJobs(db, p, now)).filter((j) => mentions(`${j.title} ${j.company ?? ""}`));
-    const done = await alreadyScored(db, p.key, [...recent, ...earlier]);
+      // A PDF advert whose text hasn't been read yet waits for the run that reads it.
+      const recent = fresh.filter(
+        (j) => !isScholarship(j) && !(isPdfAdvert(j) && !j.pdfText) && mentions(`${j.title} ${j.company ?? ""} ${j.description ?? ""} ${j.pdfText ?? ""}`),
+      );
+      const earlier = (await earlierJobs(db, p, now)).filter((j) => mentions(`${j.title} ${j.company ?? ""}`));
+      const done = await alreadyScored(db, p.key, [...recent, ...earlier]);
 
-    const queue: Job[] = [];
-    const taken = new Set<string>();
-    for (const j of [...recent, ...earlier]) {
-      const fp = j.fingerprint ?? undefined;
-      if (done.has(j.id) || (fp && done.has(fp)) || taken.has(j.id) || (fp && taken.has(fp))) continue;
-      taken.add(j.id);
-      if (fp) taken.add(fp);
-      queue.push(j);
-    }
+      const queue: Job[] = [];
+      const taken = new Set<string>();
+      for (const j of [...recent, ...earlier]) {
+        const fp = j.fingerprint ?? undefined;
+        if (done.has(j.id) || (fp && done.has(fp)) || taken.has(j.id) || (fp && taken.has(fp))) continue;
+        taken.add(j.id);
+        if (fp) taken.add(fp);
+        queue.push(j);
+      }
 
-    for (const j of queue) {
-      if (left() <= 0) break;
-      requests++;
-      calls++;
-      try {
-        await scoreFor(db, ai, p, j, p.minScore ?? minScore, now);
-      } catch (e) {
-        // Not recorded, so it is tried again on a later run.
-        errors.push(`${p.key}: ${e}`);
+      for (const j of queue) {
+        if (left() <= 0) break;
+        requests++;
+        calls++;
+        try {
+          await scoreFor(db, ai, p, j, p.minScore ?? minScore, now);
+        } catch (e) {
+          // Not recorded, so it is tried again on a later run.
+          errors.push(`${p.key}: ${e}`);
+        }
       }
     }
 

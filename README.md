@@ -115,7 +115,10 @@ their own CV summary, score bands, pay ranges and keywords (`ExtraProfile` in `s
   short-course and fellowship feeds from Opportunity Desk and Opportunities For Africans join the
   rotation (`src/scholarships.ts`). Obvious misfits (PhD/undergraduate only, round-ups, other
   countries, closed) are dropped by title; the rest are scored closing-soonest first, each costing
-  two requests (its page, then the AI). These posts are never scored for you.
+  two requests (its page, then the AI). These posts never go through your main scoring; to get
+  scholarship alerts yourself, add an entry with your own `scholarships` bands and empty
+  `keywords` (scholarships only).
+- A different person goes first each run, so one person's backlog doesn't use up every run.
 - Each job is scored once per person (`profile_alerts` table), including copies on other boards.
   Jobs from the last 14 days are checked too, so a new profile isn't limited to future postings.
 - Their alerts are sent first in a run (at most 5); the daily round-up and `/` commands stay yours.

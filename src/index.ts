@@ -3,7 +3,7 @@ import { COMMANDS, handleUpdate } from "./bot";
 import { fingerprint, shortKey } from "./dedupe";
 import { fetchDetails, fetchPdfText, hasDetailPage, isPdfAdvert, pdfExcerpt } from "./details";
 import { csgBand, verifiedAiSalary } from "./salary";
-import { buildDaily, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
+import { buildDaily, buildEvening, recordHealth, sendWeeklyDigest, sourceOfTask } from "./digest";
 import { getSetting, keywordRegex, loadSettings, setSetting } from "./settings";
 import { fetchBrighterMonday } from "./sources/brightermonday";
 import { fetchCorporateStaffing } from "./sources/corporatestaffing";
@@ -89,6 +89,8 @@ const LINKEDIN_ROTATING_PER_PUSH = 4;
 export const DIGEST_CRON = "0 5 * * 1";
 /** Daily 07:00 Nairobi (04:00 UTC) round-up. Must match wrangler.jsonc. */
 export const DAILY_CRON = "0 4 * * *";
+/** Daily 18:00 Nairobi (15:00 UTC) near-miss list. Must match wrangler.jsonc. */
+export const EVENING_CRON = "0 15 * * *";
 
 export default {
   async scheduled(controller, env, ctx) {
@@ -103,6 +105,15 @@ export default {
         loadSettings(env).then(async (s) =>
           sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, await buildDaily(env, s.minScore)),
         ),
+      );
+      return;
+    }
+    if (controller.cron === EVENING_CRON) {
+      ctx.waitUntil(
+        loadSettings(env).then(async (s) => {
+          const html = await buildEvening(env, s.minScore);
+          if (html) await sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, html);
+        }),
       );
       return;
     }

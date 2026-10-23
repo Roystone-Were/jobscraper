@@ -138,10 +138,38 @@ interface Row {
   salary: string | null;
 }
 
+/** Near-miss lists go out twice a day, each covering the time since the other. */
+const MORNING_NEAR_MISS_HOURS = 13; // 18:00 -> 07:00
+const EVENING_NEAR_MISS_HOURS = 11; // 07:00 -> 18:00
+const NEAR_MISS_LIMIT = 10;
+
+const line = (r: Row) =>
+  `<b>${r.score}/10</b> · <a href="${escape(r.url)}">${escape(r.title)}</a>${r.company ? ` — ${escape(r.company)}` : ""}` +
+  ` <i>(${escape(SOURCE_LABELS[r.source] ?? r.source)})</i>` +
+  (r.salary ? `
+      💰 ${escape(r.salary)}` : "");
+
+/** Jobs just under the bar since `since`: worth a glance even though no alert was sent. */
+async function nearMisses(env: Env, minScore: number, since: number): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT title, company, url, source, score, score_reason, salary FROM seen_jobs WHERE first_seen >= ? AND notified_at IS NULL AND score BETWEEN ? AND ? ORDER BY score DESC, first_seen DESC LIMIT ?",
+  )
+    .bind(since, Math.max(1, minScore - 2), minScore - 1, NEAR_MISS_LIMIT)
+    .all<Row>();
+  if (!results.length) return [];
+  return [`🤔 <b>Near misses</b> (scored just under ${minScore}, not sent)`, ...results.map(line)];
+}
+
+/** Evening list of the day's near misses, so they aren't a day old by the morning round-up. Null when there are none. */
+export async function buildEvening(env: Env, minScore: number, now = Date.now()): Promise<string | null> {
+  const near = await nearMisses(env, minScore, now - EVENING_NEAR_MISS_HOURS * 3_600_000);
+  return near.length ? ["🌙 <b>Today's maybes</b>", "", ...near].join("\n") : null;
+}
+
 /** Morning round-up of the last 24 hours. */
 export async function buildDaily(env: Env, minScore: number, now = Date.now()): Promise<string> {
   const since = now - DAY;
-  const [counts, sent, nearMisses, health] = await Promise.all([
+  const [counts, sent, near, health] = await Promise.all([
     env.DB.prepare(
       "SELECT COUNT(*) AS jobs, SUM(score IS NOT NULL) AS scored, SUM(notified_at >= ?1) AS alerts FROM seen_jobs WHERE first_seen >= ?1",
     )
@@ -152,20 +180,10 @@ export async function buildDaily(env: Env, minScore: number, now = Date.now()): 
     )
       .bind(since)
       .all<Row>(),
-    // Just under the bar: worth a glance even though no alert was sent.
-    env.DB.prepare(
-      "SELECT title, company, url, source, score, score_reason, salary FROM seen_jobs WHERE first_seen >= ? AND notified_at IS NULL AND score BETWEEN ? AND ? ORDER BY score DESC, first_seen DESC LIMIT 5",
-    )
-      .bind(since, Math.max(1, minScore - 2), minScore - 1)
-      .all<Row>(),
+    // Since last evening's list, so none are repeated.
+    nearMisses(env, minScore, now - MORNING_NEAR_MISS_HOURS * 3_600_000),
     getSetting(env.DB, "source_health"),
   ]);
-
-  const line = (r: Row) =>
-    `<b>${r.score}/10</b> · <a href="${escape(r.url)}">${escape(r.title)}</a>${r.company ? ` — ${escape(r.company)}` : ""}` +
-    ` <i>(${escape(SOURCE_LABELS[r.source] ?? r.source)})</i>` +
-    (r.salary ? `
-      💰 ${escape(r.salary)}` : "");
 
   const h = JSON.parse(health ?? "{}") as Health;
   const down = (Object.entries(h) as [Job["source"], SourceHealth][])
@@ -178,9 +196,7 @@ export async function buildDaily(env: Env, minScore: number, now = Date.now()): 
     "",
     sent.results.length ? `🎯 <b>Best matches</b>\n${sent.results.map(line).join("\n")}` : "🎯 No strong matches in the last 24 h.",
   ];
-  if (nearMisses.results.length) {
-    out.push("", `🤔 <b>Near misses</b> (scored just under ${minScore}, not sent)`, ...nearMisses.results.map(line));
-  }
+  if (near.length) out.push("", ...near);
   if (down.length) out.push("", `⚠️ Not loading for 6 h+: ${down.join(", ")} — /digest for details`);
   return out.join("\n");
 }
